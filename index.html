@@ -1,0 +1,1056 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Carnet de cartes Pokémon</title>
+<meta name="theme-color" content="#2b45d4">
+<meta name="color-scheme" content="light dark">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Carnet Pokémon">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap">
+<style>
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; }
+img { max-width: 100%; }
+[hidden] { display: none !important; }
+/* Mise en page : un classeur de poche. Une colonne sur mobile, grille de pochettes au format carte (63:88),
+   fiche qui monte du bas de l'écran, deux onglets fixes (Rechercher / Ajouter).
+   Le seul élément "holographique" est le cadre de la photo dans la fiche. */
+:root {
+  --bg: #edf0f7;
+  --surface: #ffffff;
+  --surface-2: #e2e7f3;
+  --fg: #121a33;
+  --muted: #566080;
+  --line: #c9d1e5;
+  --accent: #2b45d4;
+  --on-accent: #ffffff;
+  --accent-soft: #dde3fb;
+  --ok: #1b7248;
+  --ok-soft: #d8efe2;
+  --danger: #b3261e;
+  --danger-soft: #f8dcd9;
+  --scrim: rgba(10, 14, 30, 0.55);
+  --holo: linear-gradient(135deg, #ff9ad5 0%, #ffd27a 25%, #8ff0c4 50%, #7ac7ff 75%, #c39bff 100%);
+  --font-display: "Bricolage Grotesque", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  --font-body: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --r-card: 14px;
+  --r-ctl: 12px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e1325;
+    --surface: #171e37;
+    --surface-2: #1f2845;
+    --fg: #e8ecf8;
+    --muted: #9aa5c6;
+    --line: #2c3658;
+    --accent: #8ea2ff;
+    --on-accent: #0b1022;
+    --accent-soft: #232e5e;
+    --ok: #5fd39a;
+    --ok-soft: #173a2b;
+    --danger: #ff8a80;
+    --danger-soft: #45201d;
+    --scrim: rgba(3, 5, 12, 0.7);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e1325;
+  --surface: #171e37;
+  --surface-2: #1f2845;
+  --fg: #e8ecf8;
+  --muted: #9aa5c6;
+  --line: #2c3658;
+  --accent: #8ea2ff;
+  --on-accent: #0b1022;
+  --accent-soft: #232e5e;
+  --ok: #5fd39a;
+  --ok-soft: #173a2b;
+  --danger: #ff8a80;
+  --danger-soft: #45201d;
+  --scrim: rgba(3, 5, 12, 0.7);
+  color-scheme: dark;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.45;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: calc(20px + env(safe-area-inset-top, 0px)) calc(96px + env(safe-area-inset-bottom, 0px));
+}
+button, input, textarea { font: inherit; color: inherit; }
+h1, h2, h3, p, dl, dd { margin: 0; }
+.wrap { max-width: 760px; margin: 0 auto; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* En-tête */
+.head { display: flex; flex-direction: column; gap: 4px; margin-bottom: 16px; }
+.eyebrow { font-size: 12px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+h1 { font-family: var(--font-display); font-weight: 700; font-size: clamp(26px, 7vw, 34px); line-height: 1.1; letter-spacing: -0.01em; text-wrap: balance; }
+.summary { color: var(--muted); font-size: 14px; font-variant-numeric: tabular-nums; }
+
+/* Champs */
+.input {
+  width: 100%; min-height: 48px; padding: 10px 14px;
+  border: 1px solid var(--line); border-radius: var(--r-ctl);
+  background: var(--surface); color: var(--fg);
+}
+textarea.input { resize: vertical; min-height: 92px; }
+.input::placeholder { color: var(--muted); opacity: 0.85; }
+.input[aria-invalid="true"] { border-color: var(--danger); }
+.input:focus-visible, .btn:focus-visible, .tile:focus-visible, .chip-btn:focus-visible, .tab:focus-visible,
+.icon-btn:focus-visible, .photo-btn:focus-visible, .link-btn:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.searchbox { position: relative; }
+.searchbox svg { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); width: 20px; height: 20px; color: var(--muted); pointer-events: none; }
+.searchbox .input { padding-left: 44px; min-height: 52px; font-size: 17px; }
+
+/* Filtres */
+.seg { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.chip-btn {
+  min-height: 40px; padding: 0 16px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--line); background: var(--surface); font-weight: 500; font-size: 14px;
+}
+.chip-btn[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.count { margin: 14px 0 10px; font-size: 13px; color: var(--muted); min-height: 1.4em; }
+
+/* Grille de pochettes */
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+.tile {
+  display: flex; flex-direction: column; gap: 2px; min-width: 0; width: 100%; padding: 8px; text-align: left; cursor: pointer;
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-card);
+}
+.ph { position: relative; aspect-ratio: 63 / 88; max-width: 100%; overflow: hidden; border-radius: 8px; background: var(--surface-2); }
+.ph img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.ph-empty { display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; font-family: var(--font-display); font-weight: 700; font-size: 44px; color: var(--muted); }
+.badge {
+  position: absolute; top: 6px; right: 6px; padding: 3px 9px; border-radius: 999px;
+  font-size: 12px; font-weight: 600; background: var(--ok-soft); color: var(--ok);
+}
+.t-name { margin-top: 8px; font-family: var(--font-display); font-weight: 700; font-size: 15px; line-height: 1.2; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.t-sub { font-size: 13px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-height: 1.4em; }
+.mono { font-family: var(--font-mono); font-weight: 500; font-size: 12px; }
+.t-price { margin-top: 2px; font-size: 17px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.price-na { font-size: 13px; font-weight: 500; color: var(--muted); }
+
+/* États vides */
+.empty { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; padding: 24px 20px; border: 1px dashed var(--line); border-radius: var(--r-card); background: var(--surface); }
+.empty h2 { font-family: var(--font-display); font-size: 20px; }
+.empty p { color: var(--muted); max-width: 46ch; }
+.foot { display: flex; flex-direction: column; gap: 10px; margin-top: 28px; padding-top: 20px; border-top: 1px solid var(--line); }
+.foot-h { font-family: var(--font-display); font-weight: 700; font-size: 18px; }
+.foot-row { display: flex; flex-wrap: wrap; gap: 10px; }
+
+/* Boutons */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 48px; padding: 0 20px;
+  border: 1px solid transparent; border-radius: var(--r-ctl); font-weight: 600; cursor: pointer;
+}
+.btn:disabled { opacity: 0.6; cursor: default; }
+.btn-primary { background: var(--accent); color: var(--on-accent); }
+.btn-ghost { background: var(--surface); border-color: var(--line); }
+.btn-danger { background: var(--surface); border-color: var(--danger); color: var(--danger); }
+.btn-danger-solid { background: var(--danger); color: var(--surface); }
+.link-btn { min-height: 40px; padding: 0 4px; background: none; border: 0; color: var(--accent); font-weight: 600; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+.icon-btn { display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); cursor: pointer; }
+.icon-btn svg { width: 20px; height: 20px; }
+
+/* Formulaire */
+.form-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 24px; }
+.fields { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.field > label, .lbl { font-size: 14px; font-weight: 600; }
+.row2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
+.hint { font-size: 13px; color: var(--muted); }
+.err { font-size: 14px; color: var(--danger); }
+.actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 4px; }
+.photo-col { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.photo-btn {
+  position: relative; width: 100%; max-width: 200px; aspect-ratio: 63 / 88; overflow: hidden; cursor: pointer; padding: 0;
+  border: 2px dashed var(--line); border-radius: 12px; background: var(--surface); color: var(--muted);
+}
+.photo-btn img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.photo-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; width: 100%; height: 100%; padding: 12px; font-size: 14px; font-weight: 500; text-align: center; }
+.photo-empty svg { width: 32px; height: 32px; }
+.photo-actions { display: flex; gap: 16px; }
+@media (min-width: 640px) {
+  .form-grid { grid-template-columns: 200px minmax(0, 1fr); gap: 32px; }
+}
+
+/* Fiche */
+.sheet { position: fixed; inset: 0; z-index: 30; display: flex; align-items: flex-end; justify-content: center; padding-top: env(safe-area-inset-top, 0px); background: var(--scrim); }
+.panel {
+  width: 100%; max-width: 560px; max-height: 100%; overflow-y: auto; overscroll-behavior: contain;
+  background: var(--bg); border-radius: 22px 22px 0 0;
+  padding: 12px max(16px, env(safe-area-inset-left, 0px)) calc(20px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-right, 0px));
+}
+.sheet-bar { display: flex; justify-content: flex-end; }
+.sheet-body { display: flex; flex-direction: column; gap: 16px; }
+.holo { width: min(100%, 250px); margin: 0 auto; padding: 3px; border-radius: 18px; background: var(--holo); }
+.holo-in { aspect-ratio: 63 / 88; overflow: hidden; border-radius: 15px; background: var(--surface-2); }
+.holo-in img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.f-title { display: flex; flex-direction: column; gap: 4px; }
+.f-title h2 { font-family: var(--font-display); font-weight: 700; font-size: 26px; line-height: 1.15; overflow-wrap: anywhere; text-wrap: balance; }
+.f-meta { color: var(--muted); font-size: 15px; }
+.price-box { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 14px 16px; border-radius: var(--r-card); background: var(--accent-soft); }
+.price-box .k { font-size: 12px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.price-big { font-family: var(--font-display); font-weight: 700; font-size: 32px; font-variant-numeric: tabular-nums; }
+.price-big.na { font-size: 18px; color: var(--muted); font-weight: 600; }
+.status { align-self: flex-start; padding: 4px 12px; border-radius: 999px; font-size: 13px; font-weight: 600; border: 1px solid var(--accent); color: var(--accent); }
+.status.ok { border-color: var(--ok); background: var(--ok-soft); color: var(--ok); }
+.details { display: flex; flex-direction: column; gap: 12px; }
+.details dt { font-size: 12px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.details dd { overflow-wrap: anywhere; white-space: pre-wrap; }
+.details a { color: var(--accent); font-weight: 500; }
+.f-actions { display: flex; flex-direction: column; gap: 10px; }
+.confirm { display: flex; flex-direction: column; gap: 10px; padding: 14px; border-radius: var(--r-card); background: var(--danger-soft); }
+.confirm-row { display: flex; flex-wrap: wrap; gap: 10px; }
+
+/* Onglets et message */
+.tabs {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; display: flex; gap: 8px;
+  padding: 8px max(16px, env(safe-area-inset-right, 0px)) calc(8px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
+  background: var(--surface); border-top: 1px solid var(--line);
+}
+.tab { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: 52px; border: 0; border-radius: var(--r-ctl); background: none; color: var(--muted); font-size: 13px; font-weight: 600; cursor: pointer; }
+.tab svg { width: 22px; height: 22px; }
+.tab[aria-current="page"] { background: var(--accent-soft); color: var(--accent); }
+.toast {
+  position: fixed; left: 50%; bottom: calc(84px + env(safe-area-inset-bottom, 0px)); z-index: 40; transform: translateX(-50%);
+  max-width: calc(100% - 32px); padding: 12px 18px; border-radius: 999px; background: var(--fg); color: var(--bg); font-size: 14px; font-weight: 500; text-align: center;
+}
+
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; animation: none !important; scroll-behavior: auto !important; } }
+</style>
+
+<div class="wrap">
+  <section id="view-search" aria-labelledby="h-search">
+    <header class="head">
+      <p class="eyebrow">Liste d’achat</p>
+      <h1 id="h-search">Carnet de cartes</h1>
+      <p class="summary" id="summary" aria-live="polite">Chargement…</p>
+    </header>
+
+    <label class="sr" for="q">Rechercher une carte</label>
+    <div class="searchbox">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+      <input id="q" class="input" type="search" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Nom, extension ou numéro">
+    </div>
+    <div class="seg" role="group" aria-label="Filtrer par statut">
+      <button type="button" class="chip-btn" data-filter="all" aria-pressed="true">Toutes</button>
+      <button type="button" class="chip-btn" data-filter="a-acheter" aria-pressed="false">À acheter</button>
+      <button type="button" class="chip-btn" data-filter="acquise" aria-pressed="false">Acquises</button>
+    </div>
+    <p class="count" id="count" aria-live="polite"></p>
+    <div id="results" class="grid"></div>
+    <div id="empty" class="empty" hidden></div>
+    <div class="foot">
+      <h2 class="foot-h">Sauvegarde</h2>
+      <p class="hint" id="backup-info"></p>
+      <div class="foot-row">
+        <button type="button" id="backup" class="btn btn-primary" hidden>Sauvegarder avec les photos</button>
+        <button type="button" id="restore" class="btn btn-ghost">Restaurer une sauvegarde</button>
+        <button type="button" id="export" class="btn btn-ghost" hidden>Exporter en CSV</button>
+      </div>
+      <input id="restore-file" class="sr" type="file" accept=".json,application/json" tabindex="-1" aria-label="Fichier de sauvegarde">
+      <p class="err" id="restore-err" role="alert" hidden></p>
+    </div>
+  </section>
+
+  <section id="view-add" aria-labelledby="h-add" hidden>
+    <header class="head">
+      <p class="eyebrow" id="add-eyebrow">Nouvelle carte</p>
+      <h1 id="h-add">Ajouter une carte</h1>
+    </header>
+    <form id="form" class="form-grid" novalidate>
+      <div class="photo-col">
+        <span class="lbl" id="photo-lbl">Photo</span>
+        <input id="f-photo" class="sr" type="file" accept="image/*" aria-labelledby="photo-lbl" tabindex="-1">
+        <button type="button" id="photo-btn" class="photo-btn" aria-labelledby="photo-lbl">
+          <span id="photo-empty" class="photo-empty">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l1.5-2h7L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1Z"/><circle cx="12" cy="13" r="3.5"/></svg>
+            <span>Ajouter une photo</span>
+          </span>
+          <img id="photo-prev" alt="Aperçu de la photo" hidden>
+        </button>
+        <div class="photo-actions" id="photo-actions" hidden>
+          <button type="button" class="link-btn" id="photo-change">Changer</button>
+          <button type="button" class="link-btn" id="photo-remove">Retirer</button>
+        </div>
+        <p class="err" id="photo-err" role="alert" hidden></p>
+      </div>
+
+      <div class="fields">
+        <div class="field">
+          <label for="f-nom">Nom de la carte</label>
+          <input id="f-nom" class="input" type="text" autocomplete="off" placeholder="Dracaufeu" aria-describedby="nom-err">
+          <p class="err" id="nom-err" hidden></p>
+        </div>
+        <div class="row2">
+          <div class="field">
+            <label for="f-serie">Extension</label>
+            <input id="f-serie" class="input" type="text" autocomplete="off" placeholder="Célébrations">
+          </div>
+          <div class="field">
+            <label for="f-num">Numéro</label>
+            <input id="f-num" class="input" type="text" autocomplete="off" placeholder="025/165">
+          </div>
+        </div>
+        <div class="field">
+          <label for="f-prix">Prix conseillé (€)</label>
+          <input id="f-prix" class="input" type="text" inputmode="decimal" autocomplete="off" placeholder="24,90" aria-describedby="prix-hint prix-err">
+          <p class="hint" id="prix-hint">Votre repère d’achat, en euros.</p>
+          <p class="err" id="prix-err" hidden></p>
+        </div>
+        <div class="field">
+          <label for="f-lieu">Où l’acheter</label>
+          <input id="f-lieu" class="input" type="text" autocomplete="off" placeholder="Site, boutique ou lien">
+        </div>
+        <div class="field">
+          <label for="f-notes">Notes</label>
+          <textarea id="f-notes" class="input" rows="3" placeholder="État souhaité, langue, édition…"></textarea>
+        </div>
+        <p class="err" id="form-err" role="alert" hidden></p>
+        <div class="actions">
+          <button type="submit" class="btn btn-primary" id="save">Enregistrer la carte</button>
+          <button type="button" class="btn btn-ghost" id="cancel" hidden>Annuler</button>
+        </div>
+      </div>
+    </form>
+  </section>
+</div>
+
+<nav class="tabs" aria-label="Navigation principale">
+  <button type="button" class="tab" id="tab-rechercher" data-view="rechercher">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+    Rechercher
+  </button>
+  <button type="button" class="tab" id="tab-ajouter" data-view="ajouter">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+    Ajouter
+  </button>
+</nav>
+
+<div id="sheet" class="sheet" hidden>
+  <div class="panel" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
+    <div class="sheet-bar">
+      <button type="button" class="icon-btn" id="sheet-close" aria-label="Fermer la fiche">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
+      </button>
+    </div>
+    <div class="sheet-body" id="sheet-body"></div>
+  </div>
+</div>
+
+<div id="toast" class="toast" role="status" hidden></div>
+
+<script>
+(function () {
+  document.documentElement.lang = 'fr';
+  var $ = function (id) { return document.getElementById(id); };
+  var eur = new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR' });
+
+  var state = {
+    cards: [], loaded: false, slow: false, loadError: false, dbOff: false,
+    db: null,
+    filter: 'all', openId: null, openerId: null, confirmDelete: false, busy: false, sheetSig: '',
+    editingId: null, saving: false, photoBlob: null, photoPreview: null, removePhoto: false
+  };
+
+  /* ---------- Stockage dans le téléphone (IndexedDB) ---------- */
+  function openDb() {
+    return new Promise(function (resolve, reject) {
+      if (!window.indexedDB) { reject(new Error('no idb')); return; }
+      var req = indexedDB.open('carnet-cartes', 1);
+      req.onupgradeneeded = function () { req.result.createObjectStore('cartes', { keyPath: 'id' }); };
+      req.onsuccess = function () { resolve(req.result); };
+      req.onerror = function () { reject(req.error); };
+      req.onblocked = function () { reject(new Error('blocked')); };
+    });
+  }
+  function makeStore(idb) {
+    function run(mode, fn) {
+      return new Promise(function (resolve, reject) {
+        var tx = idb.transaction('cartes', mode);
+        var out;
+        tx.oncomplete = function () { resolve(out); };
+        tx.onerror = function () { reject(tx.error); };
+        tx.onabort = function () { reject(tx.error || new Error('abort')); };
+        out = fn(tx.objectStore('cartes'));
+      });
+    }
+    function reqResult(req) { return new Promise(function (res, rej) { req.onsuccess = function () { res(req.result); }; req.onerror = function () { rej(req.error); }; }); }
+    return {
+      all: function () { return new Promise(function (resolve, reject) {
+        var tx = idb.transaction('cartes', 'readonly');
+        var req = tx.objectStore('cartes').getAll();
+        req.onsuccess = function () { resolve(req.result); };
+        req.onerror = function () { reject(req.error); };
+      }); },
+      put: function (card) { return run('readwrite', function (s) { s.put(card); }); },
+      remove: function (id) { return run('readwrite', function (s) { s.delete(id); }); },
+      get: function (id) { return new Promise(function (resolve, reject) {
+        var req = idb.transaction('cartes', 'readonly').objectStore('cartes').get(id);
+        req.onsuccess = function () { resolve(req.result); };
+        req.onerror = function () { reject(req.error); };
+      }); }
+    };
+  }
+  function newId() { return 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
+  var urlCache = {};
+  function blobUrl(c) {
+    var key = c.updatedAt || 0;
+    var hit = urlCache[c.id];
+    if (hit && hit.key === key) return hit.url;
+    if (hit) URL.revokeObjectURL(hit.url);
+    var url = URL.createObjectURL(c.photoBlob);
+    urlCache[c.id] = { key: key, url: url };
+    return url;
+  }
+  async function refresh() {
+    state.cards = await state.db.all();
+    Object.keys(urlCache).forEach(function (id) {
+      if (!state.cards.some(function (c) { return c.id === id; })) { URL.revokeObjectURL(urlCache[id].url); delete urlCache[id]; }
+    });
+    render();
+  }
+
+  /* ---------- Utilitaires ---------- */
+  function h(tag, props) {
+    var e = document.createElement(tag);
+    if (props) {
+      Object.keys(props).forEach(function (k) {
+        var v = props[k];
+        if (k === 'class') e.className = v;
+        else if (k === 'text') e.textContent = v;
+        else if (k.indexOf('on') === 0) e.addEventListener(k.slice(2), v);
+        else if (v === true) e.setAttribute(k, '');
+        else if (v !== false && v != null) e.setAttribute(k, v);
+      });
+    }
+    for (var i = 2; i < arguments.length; i++) {
+      var kid = arguments[i];
+      if (kid == null || kid === false) continue;
+      e.append(kid.nodeType ? kid : document.createTextNode(kid));
+    }
+    return e;
+  }
+  function norm(s) { return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase(); }
+  function photoSrc(c) { return c.photoBlob ? blobUrl(c) : null; }
+  function plural(n, one, many) { return n > 1 ? many : one; }
+  var toastTimer = null;
+  function toast(msg) {
+    var t = $('toast');
+    t.textContent = msg;
+    t.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { t.hidden = true; }, 3200);
+  }
+  function showErr(id, msg) {
+    var el = $(id);
+    if (!msg) { el.hidden = true; el.textContent = ''; return; }
+    el.textContent = msg;
+    el.hidden = false;
+  }
+
+  /* ---------- Photos ---------- */
+  function loadImage(blob) {
+    return new Promise(function (resolve, reject) {
+      var url = URL.createObjectURL(blob);
+      var img = new Image();
+      img.onload = function () { URL.revokeObjectURL(url); resolve(img); };
+      img.onerror = function () { URL.revokeObjectURL(url); reject(new Error('image')); };
+      img.src = url;
+    });
+  }
+  function resizeToBlob(blob, maxSide, quality) {
+    return loadImage(blob).then(function (img) {
+      var s = Math.min(1, maxSide / Math.max(img.naturalWidth, img.naturalHeight));
+      var w = Math.max(1, Math.round(img.naturalWidth * s));
+      var hh = Math.max(1, Math.round(img.naturalHeight * s));
+      var c = document.createElement('canvas');
+      c.width = w; c.height = hh;
+      var ctx = c.getContext('2d');
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, w, hh);
+      ctx.drawImage(img, 0, 0, w, hh);
+      return new Promise(function (resolve, reject) {
+        c.toBlob(function (b) { b ? resolve(b) : reject(new Error('blob')); }, 'image/jpeg', quality);
+      });
+    });
+  }
+  function blobToDataUrl(blob) {
+    return new Promise(function (resolve, reject) {
+      var r = new FileReader();
+      r.onload = function () { resolve(r.result); };
+      r.onerror = function () { reject(new Error('read')); };
+      r.readAsDataURL(blob);
+    });
+  }
+  async function smallDataUrl(blob) {
+    var steps = [[640, 0.65], [480, 0.6], [360, 0.55]];
+    for (var i = 0; i < steps.length; i++) {
+      var b = await resizeToBlob(blob, steps[i][0], steps[i][1]);
+      var url = await blobToDataUrl(b);
+      if (url.length < 180000) return url;
+    }
+    throw new Error('too big');
+  }
+  function photoBox(c, badge) {
+    var box = h('div', { class: 'ph' });
+    var src = photoSrc(c);
+    var initial = (c.nom || '?').trim().charAt(0).toUpperCase() || '?';
+    function placeholder() { return h('div', { class: 'ph-empty', 'aria-hidden': 'true', text: initial }); }
+    if (src) {
+      var img = h('img', { src: src, alt: 'Photo de ' + c.nom, loading: 'lazy' });
+      img.addEventListener('error', function () { img.replaceWith(placeholder()); });
+      box.append(img);
+    } else {
+      box.append(placeholder());
+    }
+    if (badge) box.append(badge);
+    return box;
+  }
+
+  /* ---------- Recherche et liste ---------- */
+  function visibleCards() {
+    var terms = norm($('q').value).trim().split(/\s+/).filter(Boolean);
+    var list = state.cards.filter(function (c) { return state.filter === 'all' || c.statut === state.filter; });
+    function byRecent(a, b) { return (b.createdAt || 0) - (a.createdAt || 0); }
+    if (!terms.length) return list.sort(byRecent);
+    list = list.filter(function (c) {
+      var hay = norm([c.nom, c.serie, c.numero, c.lieu, c.notes].join(' '));
+      return terms.every(function (t) { return hay.indexOf(t) !== -1; });
+    });
+    function score(c) {
+      var n = norm(c.nom);
+      if (n.indexOf(terms[0]) === 0) return 2;
+      return n.indexOf(terms[0]) !== -1 ? 1 : 0;
+    }
+    return list.sort(function (a, b) { return score(b) - score(a) || byRecent(a, b); });
+  }
+  function tile(c) {
+    var badge = c.statut === 'acquise' ? h('span', { class: 'badge', text: 'Acquise' }) : null;
+    var sub = h('span', { class: 't-sub' });
+    if (c.serie) sub.append(c.serie);
+    if (c.serie && c.numero) sub.append(' · ');
+    if (c.numero) sub.append(h('span', { class: 'mono', text: c.numero }));
+    var price = c.prix != null
+      ? h('span', { class: 't-price', text: eur.format(c.prix) })
+      : h('span', { class: 't-price price-na', text: 'Prix à saisir' });
+    return h('button', { type: 'button', class: 'tile', 'data-id': c.id, onclick: function () { openSheet(c.id); } },
+      photoBox(c, badge), h('span', { class: 't-name', text: c.nom }), sub, price);
+  }
+  function renderSummary() {
+    var s = $('summary');
+    if (state.dbOff) { s.textContent = 'Carnet indisponible'; return; }
+    if (state.loadError) { s.textContent = 'Carnet indisponible pour le moment'; return; }
+    if (!state.loaded) { s.textContent = 'Chargement…'; return; }
+    var n = state.cards.length;
+    if (!n) { s.textContent = 'Aucune carte enregistrée'; return; }
+    var todo = state.cards.filter(function (c) { return c.statut !== 'acquise'; });
+    var budget = todo.reduce(function (sum, c) { return sum + (c.prix || 0); }, 0);
+    var txt = n + ' ' + plural(n, 'carte', 'cartes') + ' · ' + todo.length + ' à acheter';
+    if (budget > 0) txt += ' · ' + eur.format(budget) + ' à prévoir';
+    s.textContent = txt;
+  }
+  function showEmpty(title, text, btnLabel, btnFn) {
+    var box = $('empty');
+    box.replaceChildren(h('h2', { text: title }), text ? h('p', { text: text }) : null,
+      btnLabel ? h('button', { type: 'button', class: 'btn btn-primary', text: btnLabel, onclick: btnFn }) : null);
+    box.hidden = false;
+  }
+  function renderResults() {
+    var res = $('results');
+    var box = $('empty');
+    res.replaceChildren();
+    box.hidden = true;
+    box.replaceChildren();
+    $('count').textContent = '';
+    if (state.dbOff) {
+      showEmpty('Carnet indisponible', 'Le navigateur bloque l’enregistrement des cartes sur ce téléphone. Quittez la navigation privée ou autorisez le stockage du site, puis rouvrez l’application.');
+      return;
+    }
+    if (state.loadError) {
+      showEmpty('Impossible de charger vos cartes', 'Vérifiez votre connexion puis rouvrez la page.');
+      return;
+    }
+    if (!state.loaded) {
+      showEmpty('Chargement de vos cartes…', state.slow ? 'Cela prend plus de temps que prévu. Vos cartes s’afficheront dès que la connexion répond.' : '');
+      return;
+    }
+    if (!state.cards.length) {
+      showEmpty('Votre carnet est vide', 'Ajoutez une carte avec sa photo et son prix conseillé. Vous la retrouverez ensuite en tapant son nom.', 'Ajouter une carte', function () { startNew(''); });
+      return;
+    }
+    var list = visibleCards();
+    var q = $('q').value.trim();
+    if (!list.length) {
+      if (q) showEmpty('Aucun résultat', 'Aucune carte ne correspond à « ' + q + ' ».', 'Ajouter « ' + q + ' »', function () { startNew(q); });
+      else showEmpty('Rien dans cette liste', 'Aucune carte n’a ce statut pour le moment.');
+      return;
+    }
+    $('count').textContent = list.length + ' ' + plural(list.length, 'carte', 'cartes');
+    list.forEach(function (c) { res.append(tile(c)); });
+  }
+  function renderExport() {
+    $('export').hidden = !state.cards.length;
+    $('backup').hidden = !state.cards.length;
+    renderBackupInfo();
+  }
+  function render() {
+    renderSummary();
+    renderResults();
+    renderExport();
+    renderSheet(false);
+  }
+
+  /* ---------- Fiche ---------- */
+  function openSheet(id) {
+    state.openId = id;
+    state.openerId = id;
+    state.confirmDelete = false;
+    state.sheetSig = '';
+    renderSheet(true);
+    $('sheet').hidden = false;
+    document.documentElement.style.overflow = 'hidden';
+    $('sheet-close').focus();
+  }
+  function closeSheet() {
+    var opener = state.openerId;
+    $('sheet').hidden = true;
+    state.openId = null;
+    state.confirmDelete = false;
+    state.sheetSig = '';
+    document.documentElement.style.overflow = '';
+    if (opener) {
+      var t = document.querySelector('.tile[data-id="' + opener + '"]');
+      if (t) t.focus();
+    }
+  }
+  function renderSheet(force) {
+    if (!state.openId) return;
+    var c = state.cards.find(function (x) { return x.id === state.openId; });
+    if (!c) { closeSheet(); return; }
+    var sig = JSON.stringify(c) + '|' + state.confirmDelete + '|' + state.busy;
+    if (!force && sig === state.sheetSig) return;
+    state.sheetSig = sig;
+    var focusedId = document.activeElement && document.activeElement.id;
+
+    var src = photoSrc(c);
+    var inner = h('div', { class: 'holo-in' });
+    if (src) {
+      var img = h('img', { src: src, alt: 'Photo de ' + c.nom });
+      img.addEventListener('error', function () { img.remove(); });
+      inner.append(img);
+    } else {
+      inner.append(h('div', { class: 'ph-empty', 'aria-hidden': 'true', text: (c.nom || '?').trim().charAt(0).toUpperCase() }));
+    }
+    var meta = h('p', { class: 'f-meta' });
+    if (c.serie) meta.append(c.serie);
+    if (c.serie && c.numero) meta.append(' · ');
+    if (c.numero) meta.append(h('span', { class: 'mono', text: c.numero }));
+
+    var acquise = c.statut === 'acquise';
+    var priceBox = h('div', { class: 'price-box' },
+      h('span', { class: 'k', text: 'Prix conseillé' }),
+      c.prix != null ? h('strong', { class: 'price-big', text: eur.format(c.prix) }) : h('strong', { class: 'price-big na', text: 'Non renseigné' }));
+
+    var details = h('dl', { class: 'details' });
+    if (c.lieu) {
+      var dd = h('dd');
+      if (/^https?:\/\//i.test(c.lieu)) {
+        var label = c.lieu;
+        try { label = new URL(c.lieu).hostname.replace(/^www\./, ''); } catch (e) { /* garde le lien brut */ }
+        dd.append(h('a', { href: c.lieu, target: '_blank', rel: 'noopener noreferrer', text: label }));
+      } else { dd.textContent = c.lieu; }
+      details.append(h('div', null, h('dt', { text: 'Où l’acheter' }), dd));
+    }
+    if (c.notes) details.append(h('div', null, h('dt', { text: 'Notes' }), h('dd', { text: c.notes })));
+
+    var actions = h('div', { class: 'f-actions' });
+    actions.append(h('button', {
+      type: 'button', id: 'sheet-toggle', class: 'btn ' + (acquise ? 'btn-ghost' : 'btn-primary'), disabled: state.busy,
+      text: acquise ? 'Remettre à acheter' : 'Marquer comme acquise', onclick: function () { toggleStatus(c); }
+    }));
+    actions.append(h('button', { type: 'button', id: 'sheet-edit', class: 'btn btn-ghost', text: 'Modifier', onclick: function () { startEdit(c); } }));
+    if (state.confirmDelete) {
+      actions.append(h('div', { class: 'confirm' },
+        h('p', { text: 'Supprimer « ' + c.nom + ' » du carnet ? Cette action est définitive.' }),
+        h('div', { class: 'confirm-row' },
+          h('button', { type: 'button', id: 'sheet-del-yes', class: 'btn btn-danger btn-danger-solid', disabled: state.busy, text: 'Oui, supprimer', onclick: function () { deleteCard(c); } }),
+          h('button', { type: 'button', id: 'sheet-del-no', class: 'btn btn-ghost', text: 'Annuler', onclick: function () { state.confirmDelete = false; renderSheet(true); } }))));
+    } else {
+      actions.append(h('button', { type: 'button', id: 'sheet-del', class: 'btn btn-danger', text: 'Supprimer', onclick: function () { state.confirmDelete = true; renderSheet(true); } }));
+    }
+
+    $('sheet-body').replaceChildren(
+      h('div', { class: 'holo' }, inner),
+      h('div', { class: 'f-title' }, h('h2', { id: 'sheet-title', text: c.nom }), meta),
+      h('span', { class: 'status' + (acquise ? ' ok' : ''), text: acquise ? 'Acquise' : 'À acheter' }),
+      priceBox,
+      details.children.length ? details : null,
+      actions);
+    if (focusedId) {
+      var again = document.getElementById(focusedId);
+      if (again) again.focus();
+    }
+  }
+  async function toggleStatus(c) {
+    if (!state.db || state.busy) return;
+    state.busy = true; renderSheet(true);
+    try {
+      var next = c.statut === 'acquise' ? 'a-acheter' : 'acquise';
+      var fresh = await state.db.get(c.id);
+      if (!fresh) throw new Error('missing');
+      fresh.statut = next;
+      await state.db.put(fresh);
+      await refresh();
+      toast(next === 'acquise' ? 'Carte marquée comme acquise.' : 'Carte remise à acheter.');
+    } catch (e) {
+      toast('Impossible de modifier la carte. Réessayez dans un instant.');
+    } finally {
+      state.busy = false; renderSheet(true);
+    }
+  }
+  async function deleteCard(c) {
+    if (!state.db || state.busy) return;
+    state.busy = true; renderSheet(true);
+    try {
+      await state.db.remove(c.id);
+      await refresh();
+      state.busy = false;
+      closeSheet();
+      toast('Carte supprimée.');
+    } catch (e) {
+      state.busy = false; renderSheet(true);
+      toast('Impossible de supprimer la carte. Réessayez dans un instant.');
+    }
+  }
+
+  /* ---------- Formulaire ---------- */
+  function existingCard() { return state.editingId ? state.cards.find(function (c) { return c.id === state.editingId; }) : null; }
+  function updatePhotoUI() {
+    var ex = existingCard();
+    var src = state.photoPreview || (ex && !state.removePhoto ? photoSrc(ex) : null);
+    var prev = $('photo-prev');
+    if (src) { prev.src = src; prev.hidden = false; } else { prev.removeAttribute('src'); prev.hidden = true; }
+    $('photo-empty').hidden = !!src;
+    $('photo-actions').hidden = !src;
+  }
+  function setPhoto(blob) {
+    if (state.photoPreview) URL.revokeObjectURL(state.photoPreview);
+    state.photoBlob = blob;
+    state.removePhoto = false;
+    state.photoPreview = URL.createObjectURL(blob);
+    updatePhotoUI();
+  }
+  function clearPhotoState() {
+    if (state.photoPreview) URL.revokeObjectURL(state.photoPreview);
+    state.photoBlob = null; state.photoPreview = null; state.removePhoto = false;
+  }
+  function resetForm() {
+    $('form').reset();
+    clearPhotoState();
+    state.editingId = null;
+    ['nom-err', 'prix-err', 'form-err', 'photo-err'].forEach(function (id) { showErr(id, ''); });
+    ['f-nom', 'f-prix'].forEach(function (id) { $(id).removeAttribute('aria-invalid'); });
+    $('add-eyebrow').textContent = 'Nouvelle carte';
+    $('h-add').textContent = 'Ajouter une carte';
+    $('save').textContent = 'Enregistrer la carte';
+    $('cancel').hidden = true;
+    updatePhotoUI();
+  }
+  function startNew(name) {
+    resetForm();
+    if (name) $('f-nom').value = name;
+    go('ajouter');
+    setTimeout(function () { $('f-nom').focus(); }, 50);
+  }
+  function startEdit(c) {
+    closeSheet();
+    resetForm();
+    state.editingId = c.id;
+    $('f-nom').value = c.nom || '';
+    $('f-serie').value = c.serie || '';
+    $('f-num').value = c.numero || '';
+    $('f-prix').value = c.prix != null ? String(c.prix).replace('.', ',') : '';
+    $('f-lieu').value = c.lieu || '';
+    $('f-notes').value = c.notes || '';
+    $('add-eyebrow').textContent = 'Modification';
+    $('h-add').textContent = 'Modifier la carte';
+    $('save').textContent = 'Enregistrer les modifications';
+    $('cancel').hidden = false;
+    updatePhotoUI();
+    go('ajouter');
+  }
+  function parsePrice(raw) {
+    var s = String(raw || '').replace(/€/g, '').replace(/\s/g, '').replace(',', '.');
+    if (!s) return { ok: true, val: null };
+    if (!/^\d+(\.\d{1,2})?$/.test(s)) return { ok: false };
+    return { ok: true, val: Number(s) };
+  }
+  async function saveCard(ev) {
+    ev.preventDefault();
+    if (state.saving) return;
+    showErr('nom-err', ''); showErr('prix-err', ''); showErr('form-err', '');
+    $('f-nom').removeAttribute('aria-invalid'); $('f-prix').removeAttribute('aria-invalid');
+    var nom = $('f-nom').value.trim();
+    var price = parsePrice($('f-prix').value);
+    var bad = null;
+    if (!nom) { showErr('nom-err', 'Indiquez le nom de la carte.'); $('f-nom').setAttribute('aria-invalid', 'true'); bad = bad || $('f-nom'); }
+    if (!price.ok) { showErr('prix-err', 'Saisissez un prix en euros, par exemple 24,90.'); $('f-prix').setAttribute('aria-invalid', 'true'); bad = bad || $('f-prix'); }
+    if (bad) { bad.focus(); return; }
+    if (!state.db) { showErr('form-err', 'Le navigateur bloque l’enregistrement sur ce téléphone. Quittez la navigation privée ou autorisez le stockage du site.'); return; }
+
+    state.saving = true;
+    $('save').disabled = true;
+    $('save').textContent = 'Enregistrement…';
+    var ex = existingCard();
+    try {
+      var photoBlob = ex ? (ex.photoBlob || null) : null;
+      if (state.removePhoto) photoBlob = null;
+      if (state.photoBlob) photoBlob = state.photoBlob;
+      var data = {
+        id: ex ? ex.id : newId(),
+        nom: nom,
+        serie: $('f-serie').value.trim(),
+        numero: $('f-num').value.trim(),
+        prix: price.val,
+        lieu: $('f-lieu').value.trim(),
+        notes: $('f-notes').value.trim(),
+        statut: ex && ex.statut ? ex.statut : 'a-acheter',
+        photoBlob: photoBlob,
+        createdAt: ex && ex.createdAt ? ex.createdAt : Date.now(),
+        updatedAt: Date.now()
+      };
+      await state.db.put(data);
+      await refresh();
+      var wasEdit = !!state.editingId;
+      resetForm();
+      $('q').value = ''; setFilter('all');
+      go('rechercher');
+      toast(wasEdit ? 'Modifications enregistrées.' : 'Carte ajoutée au carnet.');
+    } catch (e) {
+      var msg = 'Impossible d’enregistrer la carte pour le moment. Réessayez dans un instant.';
+      if (e && e.name === 'QuotaExceededError') msg = 'Le téléphone n’a plus assez d’espace pour ce navigateur. Libérez de la place, puis réessayez.';
+      showErr('form-err', msg);
+    } finally {
+      state.saving = false;
+      $('save').disabled = false;
+      $('save').textContent = state.editingId ? 'Enregistrer les modifications' : 'Enregistrer la carte';
+    }
+  }
+
+  /* ---------- Export ---------- */
+  function csvCell(v) {
+    var s = String(v == null ? '' : v);
+    return /[";\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  }
+  async function exportCsv() {
+    var rows = [['Nom', 'Extension', 'Numéro', 'Prix conseillé (€)', 'Où l’acheter', 'Statut', 'Notes']];
+    state.cards.slice().sort(function (a, b) { return norm(a.nom).localeCompare(norm(b.nom)); }).forEach(function (c) {
+      rows.push([c.nom, c.serie, c.numero, c.prix != null ? String(c.prix).replace('.', ',') : '', c.lieu, c.statut === 'acquise' ? 'Acquise' : 'À acheter', c.notes]);
+    });
+    var data = '﻿' + rows.map(function (r) { return r.map(csvCell).join(';'); }).join('\r\n');
+    try {
+      downloadBlob(new Blob([data], { type: 'text/csv;charset=utf-8' }), 'carnet-cartes-pokemon.csv');
+      toast('Fichier CSV enregistré dans vos téléchargements.');
+    } catch (e) {
+      toast('L’export n’a pas fonctionné. Réessayez.');
+    }
+  }
+  function downloadBlob(blob, name) {
+    var a = document.createElement('a');
+    var url = URL.createObjectURL(blob);
+    a.href = url;
+    a.download = name;
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(function () { URL.revokeObjectURL(url); }, 10000);
+  }
+
+  /* ---------- Sauvegarde et restauration ---------- */
+  var LAST_KEY = 'carnet-derniere-sauvegarde';
+  function lastBackup() { try { return Number(localStorage.getItem(LAST_KEY)) || 0; } catch (e) { return 0; } }
+  function markBackup() { try { localStorage.setItem(LAST_KEY, String(Date.now())); } catch (e) { /* facultatif */ } }
+  function renderBackupInfo() {
+    var el = $('backup-info');
+    if (!state.cards.length) {
+      el.textContent = 'Nouveau téléphone ? Restaurez ici le fichier de sauvegarde de votre ancien carnet.';
+      return;
+    }
+    var t = lastBackup();
+    el.textContent = t
+      ? 'Dernière sauvegarde : ' + new Date(t).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }) + '.'
+      : 'Aucune sauvegarde pour l’instant. Le fichier contient les cartes et les photos.';
+  }
+  async function backupAll() {
+    $('backup').disabled = true;
+    try {
+      var out = [];
+      for (var i = 0; i < state.cards.length; i++) {
+        var c = Object.assign({}, state.cards[i]);
+        var blob = c.photoBlob;
+        delete c.photoBlob;
+        c.photo = blob ? await blobToDataUrl(blob) : null;
+        out.push(c);
+      }
+      var json = JSON.stringify({ app: 'carnet-cartes-pokemon', version: 1, exportedAt: Date.now(), cards: out });
+      var d = new Date();
+      var name = 'carnet-pokemon-sauvegarde-' + d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0') + '.json';
+      downloadBlob(new Blob([json], { type: 'application/json' }), name);
+      markBackup();
+      renderBackupInfo();
+      toast('Sauvegarde enregistrée dans vos téléchargements.');
+    } catch (e) {
+      toast('La sauvegarde n’a pas fonctionné. Réessayez.');
+    } finally {
+      $('backup').disabled = false;
+    }
+  }
+  function cleanStr(v) { return typeof v === 'string' ? v.trim() : ''; }
+  async function restoreFrom(file) {
+    showErr('restore-err', '');
+    if (!state.db) { showErr('restore-err', 'Le navigateur bloque l’enregistrement sur ce téléphone. Quittez la navigation privée ou autorisez le stockage du site.'); return; }
+    var n = 0;
+    try {
+      var data = JSON.parse(await file.text());
+      if (!data || data.app !== 'carnet-cartes-pokemon' || !Array.isArray(data.cards)) throw new Error('format');
+      for (var i = 0; i < data.cards.length; i++) {
+        var r = data.cards[i];
+        if (!r || typeof r !== 'object' || !cleanStr(r.nom)) continue;
+        var blob = null;
+        if (typeof r.photo === 'string' && /^data:image\/(jpeg|png|webp|gif);base64,/.test(r.photo)) {
+          blob = await (await fetch(r.photo)).blob();
+        }
+        await state.db.put({
+          id: /^[A-Za-z0-9_-]{1,60}$/.test(String(r.id || '')) ? String(r.id) : newId(),
+          nom: cleanStr(r.nom),
+          serie: cleanStr(r.serie),
+          numero: cleanStr(r.numero),
+          prix: typeof r.prix === 'number' && isFinite(r.prix) && r.prix >= 0 ? r.prix : null,
+          lieu: cleanStr(r.lieu),
+          notes: cleanStr(r.notes),
+          statut: r.statut === 'acquise' ? 'acquise' : 'a-acheter',
+          photoBlob: blob,
+          createdAt: Number(r.createdAt) || Date.now(),
+          updatedAt: Date.now()
+        });
+        n++;
+      }
+    } catch (e) {
+      if (e && e.name === 'QuotaExceededError') showErr('restore-err', 'Le téléphone n’a plus assez d’espace pour restaurer tout le carnet. Libérez de la place, puis réessayez.');
+      else showErr('restore-err', 'Ce fichier n’est pas une sauvegarde du carnet. Choisissez le fichier « carnet-pokemon-sauvegarde-….json ».');
+      if (n) await refresh();
+      return;
+    }
+    await refresh();
+    if (!n) { showErr('restore-err', 'Cette sauvegarde ne contient aucune carte.'); return; }
+    toast(n + ' ' + plural(n, 'carte restaurée', 'cartes restaurées') + '.');
+  }
+
+  /* ---------- Navigation ---------- */
+  function currentView() { return location.hash === '#ajouter' ? 'ajouter' : 'rechercher'; }
+  function showView(v) {
+    $('view-search').hidden = v !== 'rechercher';
+    $('view-add').hidden = v !== 'ajouter';
+    ['rechercher', 'ajouter'].forEach(function (name) {
+      var t = $('tab-' + name);
+      if (name === v) t.setAttribute('aria-current', 'page'); else t.removeAttribute('aria-current');
+    });
+    window.scrollTo(0, 0);
+  }
+  function go(v) {
+    if (location.hash === '#' + v) showView(v);
+    else location.hash = v;
+  }
+  function setFilter(f) {
+    state.filter = f;
+    document.querySelectorAll('.chip-btn').forEach(function (b) {
+      b.setAttribute('aria-pressed', b.getAttribute('data-filter') === f ? 'true' : 'false');
+    });
+  }
+
+  /* ---------- Événements ---------- */
+  window.addEventListener('hashchange', function () { showView(currentView()); });
+  document.querySelectorAll('.tab').forEach(function (t) {
+    t.addEventListener('click', function () {
+      var v = t.getAttribute('data-view');
+      if (v === 'ajouter' && currentView() !== 'ajouter') resetForm();
+      if (state.openId) closeSheet();
+      go(v);
+    });
+  });
+  document.querySelectorAll('.chip-btn').forEach(function (b) {
+    b.addEventListener('click', function () { setFilter(b.getAttribute('data-filter')); renderResults(); });
+  });
+  $('q').addEventListener('input', renderResults);
+  $('form').addEventListener('submit', saveCard);
+  $('cancel').addEventListener('click', function () { resetForm(); go('rechercher'); });
+  $('export').addEventListener('click', exportCsv);
+  $('backup').addEventListener('click', backupAll);
+  $('restore').addEventListener('click', function () { $('restore-file').click(); });
+  $('restore-file').addEventListener('change', function (e) {
+    var f = e.target.files && e.target.files[0];
+    e.target.value = '';
+    if (f) restoreFrom(f);
+  });
+  $('sheet-close').addEventListener('click', closeSheet);
+  $('sheet').addEventListener('click', function (e) { if (e.target === $('sheet')) closeSheet(); });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && state.openId) closeSheet(); });
+  $('photo-btn').addEventListener('click', function () { $('f-photo').click(); });
+  $('photo-change').addEventListener('click', function () { $('f-photo').click(); });
+  $('photo-remove').addEventListener('click', function () {
+    if (state.photoPreview) URL.revokeObjectURL(state.photoPreview);
+    state.photoBlob = null; state.photoPreview = null; state.removePhoto = true;
+    showErr('photo-err', '');
+    updatePhotoUI();
+  });
+  $('f-photo').addEventListener('change', async function (e) {
+    var f = e.target.files && e.target.files[0];
+    e.target.value = '';
+    if (!f) return;
+    showErr('photo-err', '');
+    try { setPhoto(await resizeToBlob(f, 1000, 0.82)); }
+    catch (err) { showErr('photo-err', 'Cette photo ne peut pas être lue. Essayez une photo JPEG ou PNG.'); }
+  });
+
+  /* ---------- Démarrage ---------- */
+  showView(currentView());
+  updatePhotoUI();
+  render();
+  openDb().then(function (idb) {
+    state.db = makeStore(idb);
+    return state.db.all();
+  }).then(function (cards) {
+    state.cards = cards;
+    state.loaded = true;
+    render();
+    try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) { /* facultatif */ }
+  }).catch(function () {
+    state.db = null;
+    state.dbOff = true;
+    render();
+  });
+
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function () { navigator.serviceWorker.register('sw.js').catch(function () { /* facultatif */ }); });
+  }
+})();
+</script>
+</body>
+</html>
