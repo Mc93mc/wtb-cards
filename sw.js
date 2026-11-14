@@ -1,5 +1,5 @@
 /* Fait fonctionner le carnet sans connexion. Changez le numéro de version pour forcer une mise à jour. */
-var CACHE = 'carnet-v3';
+var CACHE = 'carnet-v4';
 var FILES = ['./', 'index.html', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png'];
 
 self.addEventListener('install', function (e) {
