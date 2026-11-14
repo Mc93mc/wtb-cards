@@ -398,7 +398,7 @@ textarea.input { resize: vertical; min-height: 92px; }
     cards: [], loaded: false, slow: false, loadError: false, dbOff: false,
     db: null,
     filter: 'all', openId: null, openerId: null, confirmDelete: false, busy: false, sheetSig: '',
-    editingId: null, saving: false, photoBlob: null, photoPreview: null, removePhoto: false
+    editingId: null, saving: false, photoBlob: null, photoPreview: null, removePhoto: false, remoteUrl: null
   };
 
   /* ---------- Stockage dans le téléphone (IndexedDB) ---------- */
@@ -480,7 +480,7 @@ textarea.input { resize: vertical; min-height: 92px; }
     return e;
   }
   function norm(s) { return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase(); }
-  function photoSrc(c) { return c.photoBlob ? blobUrl(c) : null; }
+  function photoSrc(c) { return c.photoBlob ? blobUrl(c) : (c.photoUrl || null); }
   function plural(n, one, many) { return n > 1 ? many : one; }
   var toastTimer = null;
   function toast(msg) {
@@ -778,7 +778,7 @@ textarea.input { resize: vertical; min-height: 92px; }
   function existingCard() { return state.editingId ? state.cards.find(function (c) { return c.id === state.editingId; }) : null; }
   function updatePhotoUI() {
     var ex = existingCard();
-    var src = state.photoPreview || (ex && !state.removePhoto ? photoSrc(ex) : null);
+    var src = state.photoPreview || state.remoteUrl || (ex && !state.removePhoto ? photoSrc(ex) : null);
     var prev = $('photo-prev');
     if (src) { prev.src = src; prev.hidden = false; } else { prev.removeAttribute('src'); prev.hidden = true; }
     $('photo-empty').hidden = !!src;
@@ -788,12 +788,13 @@ textarea.input { resize: vertical; min-height: 92px; }
     if (state.photoPreview) URL.revokeObjectURL(state.photoPreview);
     state.photoBlob = blob;
     state.removePhoto = false;
+    state.remoteUrl = null;
     state.photoPreview = URL.createObjectURL(blob);
     updatePhotoUI();
   }
   function clearPhotoState() {
     if (state.photoPreview) URL.revokeObjectURL(state.photoPreview);
-    state.photoBlob = null; state.photoPreview = null; state.removePhoto = false;
+    state.photoBlob = null; state.photoPreview = null; state.removePhoto = false; state.remoteUrl = null;
   }
   function resetForm() {
     $('form').reset();
@@ -861,6 +862,9 @@ textarea.input { resize: vertical; min-height: 92px; }
       var photoBlob = ex ? (ex.photoBlob || null) : null;
       if (state.removePhoto) photoBlob = null;
       if (state.photoBlob) photoBlob = state.photoBlob;
+      var photoUrl = ex ? (ex.photoUrl || null) : null;
+      if (state.removePhoto || photoBlob) photoUrl = null;
+      if (state.remoteUrl && !photoBlob) photoUrl = state.remoteUrl;
       var data = {
         id: ex ? ex.id : newId(),
         nom: nom,
@@ -871,6 +875,7 @@ textarea.input { resize: vertical; min-height: 92px; }
         notes: $('f-notes').value.trim(),
         statut: ex && ex.statut ? ex.statut : 'a-acheter',
         photoBlob: photoBlob,
+        photoUrl: photoUrl,
         createdAt: ex && ex.createdAt ? ex.createdAt : Date.now(),
         updatedAt: Date.now()
       };
@@ -985,6 +990,7 @@ textarea.input { resize: vertical; min-height: 92px; }
           notes: cleanStr(r.notes),
           statut: r.statut === 'acquise' ? 'acquise' : 'a-acheter',
           photoBlob: blob,
+          photoUrl: !blob && typeof r.photoUrl === 'string' && /^https:\/\/assets\.tcgdex\.net\//.test(r.photoUrl) ? r.photoUrl : null,
           createdAt: Number(r.createdAt) || Date.now(),
           updatedAt: Date.now()
         });
@@ -1086,6 +1092,39 @@ textarea.input { resize: vertical; min-height: 92px; }
       if (my === lk.seq) $('lk-go').disabled = false;
     }
   }
+  async function loadSpecies(id) {
+    var key = 'carnet-espece-' + id;
+    try {
+      var hit = JSON.parse(localStorage.getItem(key) || 'null');
+      if (hit && hit.fr) return hit;
+    } catch (e) { /* facultatif */ }
+    var ctl = new AbortController();
+    var t = setTimeout(function () { ctl.abort(); }, 8000);
+    try {
+      var data = await fetchJson('https://pokeapi.co/api/v2/pokemon-species/' + encodeURIComponent(id), ctl.signal);
+      var out = { fr: '', ja: [] };
+      (data.names || []).forEach(function (n) {
+        var code = n && n.language && n.language.name;
+        if (code === 'fr') out.fr = n.name;
+        if (code === 'ja-Hrkt' || code === 'ja') out.ja.push(n.name);
+      });
+      if (out.fr) { try { localStorage.setItem(key, JSON.stringify(out)); } catch (e) { /* facultatif */ } }
+      return out;
+    } finally {
+      clearTimeout(t);
+    }
+  }
+  function frenchCardName(jaName, species) {
+    var n = String(jaName || '').trim();
+    var prefix = '';
+    if (n.indexOf('メガ') === 0) { prefix = 'Méga-'; n = n.slice(2); }
+    var suffixes = { 'VSTAR': ' VSTAR', 'VMAX': ' VMAX', 'GX': '-GX', 'EX': '-EX', 'ex': '-ex', 'V': ' V' };
+    var m = n.match(/(VSTAR|VMAX|GX|EX|ex|V)$/);
+    var suffix = '';
+    if (m) { suffix = suffixes[m[1]]; n = n.slice(0, n.length - m[1].length); }
+    if (species.ja.indexOf(n.trim()) === -1) return null;
+    return prefix + species.fr + suffix;
+  }
   async function pickCard(c, lang) {
     if (lk.picking) return;
     lk.picking = true;
@@ -1098,7 +1137,7 @@ textarea.input { resize: vertical; min-height: 92px; }
     try {
       $('f-nom').value = full.name || '';
       var set = full.set || {};
-      $('f-serie').value = set.name || '';
+      $('f-serie').value = (set.name || '') + (lang === 'ja' && set.name && set.id ? ' (' + set.id + ')' : (set.name ? '' : (set.id || '')));
       var total = set.cardCount && (set.cardCount.official || set.cardCount.total);
       var local = full.localId != null ? String(full.localId) : '';
       var totalTxt = total ? String(total) : '';
@@ -1106,18 +1145,51 @@ textarea.input { resize: vertical; min-height: 92px; }
       $('f-num').value = local + (local && totalTxt ? '/' + totalTxt : '');
       showErr('nom-err', '');
       $('f-nom').removeAttribute('aria-invalid');
-      var photoOk = false;
-      if (full.image) {
+
+      /* Nom français déduit du numéro Pokédex, pour les cartes japonaises */
+      var frNote = '';
+      if (lang === 'ja' && Array.isArray(full.dexId) && full.dexId.length) {
         try {
-          var res = await fetch(full.image + '/high.webp');
-          if (!res.ok) throw new Error('img');
-          setPhoto(await resizeToBlob(await res.blob(), 825, 0.85, true));
-          photoOk = true;
-        } catch (e) { /* la photo se choisit à la main */ }
+          var sp = await loadSpecies(full.dexId[0]);
+          var fr = sp && sp.fr ? frenchCardName(full.name, sp) : null;
+          if (fr) {
+            if (!$('f-notes').value.trim()) $('f-notes').value = 'Nom japonais : ' + full.name;
+            $('f-nom').value = fr;
+            frNote = ' Le nom français est déduit du Pokémon : vérifiez-le.';
+          } else {
+            frNote = ' Le nom français n’a pas pu être déduit : le nom japonais est conservé.';
+          }
+        } catch (e) {
+          frNote = ' Le nom français n’a pas pu être récupéré : le nom japonais est conservé.';
+        }
       }
-      var msg = 'Carte remplie : vérifiez, puis indiquez le prix.';
+
+      /* Photo : copie dans le téléphone, sinon affichage depuis internet */
+      var photoOk = false;
+      var remote = false;
+      state.remoteUrl = null;
+      if (full.image) {
+        var variants = ['/high.webp', '/high.png', '/low.webp', '/low.png'];
+        for (var i = 0; i < variants.length && !photoOk; i++) {
+          try {
+            var res = await fetch(full.image + variants[i]);
+            if (!res.ok) continue;
+            setPhoto(await resizeToBlob(await res.blob(), 825, 0.85, true));
+            photoOk = true;
+          } catch (e) { /* variante suivante */ }
+        }
+        if (!photoOk) {
+          clearPhotoState();
+          state.remoteUrl = full.image + '/high.webp';
+          remote = true;
+          updatePhotoUI();
+        }
+      }
+      lk.base = 'Carte remplie : vérifiez, puis indiquez le prix.' + frNote;
+      var msg = lk.base;
       if (partial) msg = 'Seul le nom a pu être récupéré. Complétez l’extension et le numéro à la main, puis indiquez le prix.';
-      else if (!photoOk) msg += ' La photo n’a pas pu être récupérée : ajoutez-la vous-même.';
+      else if (!full.image) msg += ' Aucune image n’est proposée pour cette carte : ajoutez votre photo.';
+      else if (remote) msg += ' La photo n’a pas pu être copiée dans le téléphone : elle s’affiche depuis internet, donc pas hors connexion.';
       lkStatus(msg);
       $('f-prix').scrollIntoView({ block: 'center' });
       $('f-prix').focus();
@@ -1173,6 +1245,12 @@ textarea.input { resize: vertical; min-height: 92px; }
     if (f) restoreFrom(f);
   });
   $('lookup-form').addEventListener('submit', runLookup);
+  $('photo-prev').addEventListener('error', function () {
+    if (!state.remoteUrl) return;
+    state.remoteUrl = null;
+    updatePhotoUI();
+    lkStatus((lk.base || '') + ' La photo ne s’affiche pas non plus depuis internet : ajoutez-la vous-même avec le bouton Photo.');
+  });
   $('sheet-close').addEventListener('click', closeSheet);
   $('sheet').addEventListener('click', function (e) { if (e.target === $('sheet')) closeSheet(); });
   document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && state.openId) closeSheet(); });
@@ -1180,7 +1258,7 @@ textarea.input { resize: vertical; min-height: 92px; }
   $('photo-change').addEventListener('click', function () { $('f-photo').click(); });
   $('photo-remove').addEventListener('click', function () {
     if (state.photoPreview) URL.revokeObjectURL(state.photoPreview);
-    state.photoBlob = null; state.photoPreview = null; state.removePhoto = true;
+    state.photoBlob = null; state.photoPreview = null; state.removePhoto = true; state.remoteUrl = null;
     showErr('photo-err', '');
     updatePhotoUI();
   });
