@@ -167,6 +167,14 @@ textarea.input { resize: vertical; min-height: 92px; }
 .icon-btn { display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); cursor: pointer; }
 .icon-btn svg { width: 20px; height: 20px; }
 
+/* Recherche en ligne */
+.lookup { display: flex; flex-direction: column; gap: 12px; margin-bottom: 28px; padding: 16px; border: 1px solid var(--line); border-radius: var(--r-card); background: var(--surface); }
+.lookup-h { font-family: var(--font-display); font-weight: 700; font-size: 18px; }
+.lookup-form { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
+.lookup .count { margin: 0; }
+.lookup .tile { background: var(--bg); }
+@media (min-width: 640px) { .lookup-form { grid-template-columns: 180px minmax(0, 1fr) auto; align-items: end; } }
+
 /* Formulaire */
 .form-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 24px; }
 .fields { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
@@ -274,6 +282,30 @@ textarea.input { resize: vertical; min-height: 92px; }
       <p class="eyebrow" id="add-eyebrow">Nouvelle carte</p>
       <h1 id="h-add">Ajouter une carte</h1>
     </header>
+
+    <section id="lookup" class="lookup" aria-labelledby="lookup-h">
+      <h2 id="lookup-h" class="lookup-h">Chercher la carte en ligne</h2>
+      <p class="hint">Remplit le nom, l’extension, le numéro et la photo. Il faut une connexion internet.</p>
+      <form id="lookup-form" class="lookup-form" novalidate>
+        <div class="field">
+          <label for="lk-lang">Langue de la carte</label>
+          <select id="lk-lang" class="input">
+            <option value="ja" selected>Japonais</option>
+            <option value="fr">Français</option>
+            <option value="en">Anglais</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="lk-q">Nom ou code</label>
+          <input id="lk-q" class="input" type="search" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Nom, ou code comme M1S 088">
+        </div>
+        <button type="submit" class="btn btn-primary" id="lk-go">Chercher</button>
+      </form>
+      <p class="hint">En japonais, les noms s’écrivent en katakana (par exemple ラティアス). Avec un nom en lettres latines, choisissez Français ou Anglais, ou saisissez le code de la carte.</p>
+      <p class="count" id="lk-status" aria-live="polite"></p>
+      <div id="lk-results" class="grid"></div>
+    </section>
+
     <form id="form" class="form-grid" novalidate>
       <div class="photo-col">
         <span class="lbl" id="photo-lbl">Photo</span>
@@ -475,7 +507,7 @@ textarea.input { resize: vertical; min-height: 92px; }
       img.src = url;
     });
   }
-  function resizeToBlob(blob, maxSide, quality) {
+  function resizeToBlob(blob, maxSide, quality, keepAlpha) {
     return loadImage(blob).then(function (img) {
       var s = Math.min(1, maxSide / Math.max(img.naturalWidth, img.naturalHeight));
       var w = Math.max(1, Math.round(img.naturalWidth * s));
@@ -483,11 +515,13 @@ textarea.input { resize: vertical; min-height: 92px; }
       var c = document.createElement('canvas');
       c.width = w; c.height = hh;
       var ctx = c.getContext('2d');
-      ctx.fillStyle = '#ffffff';
-      ctx.fillRect(0, 0, w, hh);
+      if (!keepAlpha) {
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, w, hh);
+      }
       ctx.drawImage(img, 0, 0, w, hh);
       return new Promise(function (resolve, reject) {
-        c.toBlob(function (b) { b ? resolve(b) : reject(new Error('blob')); }, 'image/jpeg', quality);
+        c.toBlob(function (b) { b ? resolve(b) : reject(new Error('blob')); }, keepAlpha ? 'image/webp' : 'image/jpeg', quality);
       });
     });
   }
@@ -771,6 +805,9 @@ textarea.input { resize: vertical; min-height: 92px; }
     $('h-add').textContent = 'Ajouter une carte';
     $('save').textContent = 'Enregistrer la carte';
     $('cancel').hidden = true;
+    $('lookup').hidden = false;
+    $('lk-results').replaceChildren();
+    $('lk-status').textContent = '';
     updatePhotoUI();
   }
   function startNew(name) {
@@ -789,6 +826,7 @@ textarea.input { resize: vertical; min-height: 92px; }
     $('f-prix').value = c.prix != null ? String(c.prix).replace('.', ',') : '';
     $('f-lieu').value = c.lieu || '';
     $('f-notes').value = c.notes || '';
+    $('lookup').hidden = true;
     $('add-eyebrow').textContent = 'Modification';
     $('h-add').textContent = 'Modifier la carte';
     $('save').textContent = 'Enregistrer les modifications';
@@ -963,6 +1001,131 @@ textarea.input { resize: vertical; min-height: 92px; }
     toast(n + ' ' + plural(n, 'carte restaurée', 'cartes restaurées') + '.');
   }
 
+  /* ---------- Recherche en ligne (TCGdex) ---------- */
+  var API = 'https://api.tcgdex.net/v2/';
+  var lk = { seq: 0, ctl: null, picking: false };
+  function lkStatus(t) { $('lk-status').textContent = t; }
+  function fetchJson(url, signal) {
+    return fetch(url, { signal: signal }).then(function (r) {
+      if (!r.ok) { var e = new Error('http ' + r.status); e.status = r.status; throw e; }
+      return r.json();
+    });
+  }
+  async function searchCards(lang, q, signal) {
+    var base = API + lang + '/cards';
+    var found = [];
+    var m = q.match(/^([a-z0-9]{2,8})[\s\-_\/]*(\d{1,3})$/i);
+    if (m) {
+      var sets = [m[1].toUpperCase(), m[1].toLowerCase()];
+      var nums = [m[2].padStart(3, '0'), String(Number(m[2]))];
+      var tries = [];
+      sets.forEach(function (s) { nums.forEach(function (n) { tries.push(fetchJson(base + '/' + encodeURIComponent(s + '-' + n), signal)); }); });
+      var settled = await Promise.allSettled(tries);
+      settled.forEach(function (r) {
+        if (r.status === 'fulfilled' && r.value && r.value.id && !found.some(function (c) { return c.id === r.value.id; })) found.push(r.value);
+      });
+    }
+    var enc = encodeURIComponent(q);
+    var list;
+    try {
+      list = await fetchJson(base + '?name=' + enc + '&sort:order=DESC&pagination:page=1&pagination:itemsPerPage=40', signal);
+    } catch (e) {
+      if (e && e.name === 'AbortError') throw e;
+      list = (await fetchJson(base + '?name=' + enc, signal)).slice().reverse();
+    }
+    (Array.isArray(list) ? list : []).forEach(function (c) {
+      if (c && c.id && !found.some(function (x) { return x.id === c.id; })) found.push(c);
+    });
+    return found.slice(0, 40);
+  }
+  function lkTile(c, lang) {
+    var box = h('div', { class: 'ph' });
+    function ph() { return h('div', { class: 'ph-empty', 'aria-hidden': 'true', text: (c.name || '?').trim().charAt(0).toUpperCase() || '?' }); }
+    if (c.image) {
+      var img = h('img', { src: c.image + '/low.webp', alt: '', loading: 'lazy' });
+      img.addEventListener('error', function () { img.replaceWith(ph()); });
+      box.append(img);
+    } else { box.append(ph()); }
+    return h('button', { type: 'button', class: 'tile', onclick: function () { pickCard(c, lang); } },
+      box, h('span', { class: 't-name', text: c.name || c.id }), h('span', { class: 't-sub' }, h('span', { class: 'mono', text: c.id })));
+  }
+  async function runLookup(ev) {
+    ev.preventDefault();
+    var q = $('lk-q').value.trim();
+    var lang = $('lk-lang').value;
+    var box = $('lk-results');
+    box.replaceChildren();
+    if (!q) { lkStatus('Tapez le nom de la carte ou son code.'); $('lk-q').focus(); return; }
+    if (navigator.onLine === false) { lkStatus('Pas de connexion internet. Réessayez plus tard ou saisissez la carte à la main.'); return; }
+    if (lk.ctl) lk.ctl.abort();
+    var ctl = new AbortController();
+    lk.ctl = ctl;
+    var my = ++lk.seq;
+    var timedOut = false;
+    var timer = setTimeout(function () { timedOut = true; ctl.abort(); }, 15000);
+    $('lk-go').disabled = true;
+    lkStatus('Recherche en cours…');
+    try {
+      var list = await searchCards(lang, q, ctl.signal);
+      if (my !== lk.seq) return;
+      if (!list.length) {
+        var latin = /^[\x00-\x7F]+$/.test(q);
+        lkStatus(lang === 'ja' && latin
+          ? 'Aucune carte trouvée. En japonais, le nom s’écrit en katakana : essayez en Français ou en Anglais, ou saisissez le code de la carte (par exemple M1S 088).'
+          : 'Aucune carte trouvée. Vérifiez l’orthographe ou saisissez la carte à la main.');
+        return;
+      }
+      list.forEach(function (c) { box.append(lkTile(c, lang)); });
+      lkStatus(list.length + ' ' + plural(list.length, 'carte trouvée', 'cartes trouvées') + '. Touchez la bonne carte.');
+    } catch (e) {
+      if (my !== lk.seq) return;
+      if (e && e.name === 'AbortError' && !timedOut) return;
+      lkStatus('La recherche en ligne n’a pas répondu. Vérifiez votre connexion ou saisissez la carte à la main.');
+    } finally {
+      clearTimeout(timer);
+      if (my === lk.seq) $('lk-go').disabled = false;
+    }
+  }
+  async function pickCard(c, lang) {
+    if (lk.picking) return;
+    lk.picking = true;
+    lkStatus('Récupération de la carte…');
+    var full = c;
+    var partial = false;
+    try {
+      if (!c.set) full = await fetchJson(API + lang + '/cards/' + encodeURIComponent(c.id));
+    } catch (e) { partial = true; full = c; }
+    try {
+      $('f-nom').value = full.name || '';
+      var set = full.set || {};
+      $('f-serie').value = set.name || '';
+      var total = set.cardCount && (set.cardCount.official || set.cardCount.total);
+      var local = full.localId != null ? String(full.localId) : '';
+      var totalTxt = total ? String(total) : '';
+      if (/^\d+$/.test(local) && /^\d+$/.test(totalTxt)) totalTxt = totalTxt.padStart(local.length, '0');
+      $('f-num').value = local + (local && totalTxt ? '/' + totalTxt : '');
+      showErr('nom-err', '');
+      $('f-nom').removeAttribute('aria-invalid');
+      var photoOk = false;
+      if (full.image) {
+        try {
+          var res = await fetch(full.image + '/high.webp');
+          if (!res.ok) throw new Error('img');
+          setPhoto(await resizeToBlob(await res.blob(), 825, 0.85, true));
+          photoOk = true;
+        } catch (e) { /* la photo se choisit à la main */ }
+      }
+      var msg = 'Carte remplie : vérifiez, puis indiquez le prix.';
+      if (partial) msg = 'Seul le nom a pu être récupéré. Complétez l’extension et le numéro à la main, puis indiquez le prix.';
+      else if (!photoOk) msg += ' La photo n’a pas pu être récupérée : ajoutez-la vous-même.';
+      lkStatus(msg);
+      $('f-prix').scrollIntoView({ block: 'center' });
+      $('f-prix').focus();
+    } finally {
+      lk.picking = false;
+    }
+  }
+
   /* ---------- Navigation ---------- */
   function currentView() { return location.hash === '#ajouter' ? 'ajouter' : 'rechercher'; }
   function showView(v) {
@@ -1009,6 +1172,7 @@ textarea.input { resize: vertical; min-height: 92px; }
     e.target.value = '';
     if (f) restoreFrom(f);
   });
+  $('lookup-form').addEventListener('submit', runLookup);
   $('sheet-close').addEventListener('click', closeSheet);
   $('sheet').addEventListener('click', function (e) { if (e.target === $('sheet')) closeSheet(); });
   document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && state.openId) closeSheet(); });
