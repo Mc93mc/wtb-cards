@@ -172,6 +172,8 @@ textarea.input { resize: vertical; min-height: 92px; }
 .lookup-h { font-family: var(--font-display); font-weight: 700; font-size: 18px; }
 .lookup-form { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
 .lookup .count { margin: 0; }
+.shared-img { width: min(100%, 180px); aspect-ratio: 63 / 88; object-fit: contain; align-self: flex-start; border-radius: 10px; background: var(--surface-2); }
+.shared-pick { display: flex; flex-direction: column; gap: 8px; }
 .lookup .tile { background: var(--bg); }
 @media (min-width: 640px) { .lookup-form { grid-template-columns: 180px minmax(0, 1fr) auto; align-items: end; } }
 
@@ -282,6 +284,19 @@ textarea.input { resize: vertical; min-height: 92px; }
       <p class="eyebrow" id="add-eyebrow">Nouvelle carte</p>
       <h1 id="h-add">Ajouter une carte</h1>
     </header>
+
+    <section id="shared" class="lookup" hidden aria-labelledby="shared-h">
+      <h2 id="shared-h" class="lookup-h">Photo reçue</h2>
+      <img id="shared-img" class="shared-img" alt="Photo reçue pour une carte">
+      <div id="shared-pick" class="shared-pick" hidden>
+        <p class="lbl">Ajouter à une carte déjà saisie sans photo :</p>
+        <div id="shared-targets" class="seg"></div>
+      </div>
+      <div class="foot-row">
+        <button type="button" id="shared-new" class="btn btn-primary">Nouvelle carte avec cette photo</button>
+        <button type="button" id="shared-drop" class="btn btn-ghost">Ignorer</button>
+      </div>
+    </section>
 
     <section id="lookup" class="lookup" aria-labelledby="lookup-h">
       <h2 id="lookup-h" class="lookup-h">Chercher la carte en ligne</h2>
@@ -398,7 +413,7 @@ textarea.input { resize: vertical; min-height: 92px; }
     cards: [], loaded: false, slow: false, loadError: false, dbOff: false,
     db: null,
     filter: 'all', openId: null, openerId: null, confirmDelete: false, busy: false, sheetSig: '',
-    editingId: null, saving: false, photoBlob: null, photoPreview: null, removePhoto: false, remoteUrl: null
+    editingId: null, saving: false, photoBlob: null, photoPreview: null, removePhoto: false, remoteUrl: null, photoSource: null, shared: null
   };
 
   /* ---------- Stockage dans le téléphone (IndexedDB) ---------- */
@@ -789,12 +804,13 @@ textarea.input { resize: vertical; min-height: 92px; }
     state.photoBlob = blob;
     state.removePhoto = false;
     state.remoteUrl = null;
+    state.photoSource = null;
     state.photoPreview = URL.createObjectURL(blob);
     updatePhotoUI();
   }
   function clearPhotoState() {
     if (state.photoPreview) URL.revokeObjectURL(state.photoPreview);
-    state.photoBlob = null; state.photoPreview = null; state.removePhoto = false; state.remoteUrl = null;
+    state.photoBlob = null; state.photoPreview = null; state.removePhoto = false; state.remoteUrl = null; state.photoSource = null;
   }
   function resetForm() {
     $('form').reset();
@@ -1165,10 +1181,13 @@ textarea.input { resize: vertical; min-height: 92px; }
       }
 
       /* Photo : copie dans le téléphone, sinon affichage depuis internet */
+      var keepShared = state.photoSource === 'partage';
       var photoOk = false;
       var remote = false;
-      state.remoteUrl = null;
-      if (full.image) {
+      if (!keepShared) state.remoteUrl = null;
+      if (keepShared) {
+        photoOk = true;
+      } else if (full.image) {
         var variants = ['/high.webp', '/high.png', '/low.webp', '/low.png'];
         for (var i = 0; i < variants.length && !photoOk; i++) {
           try {
@@ -1188,6 +1207,7 @@ textarea.input { resize: vertical; min-height: 92px; }
       lk.base = 'Carte remplie : vérifiez, puis indiquez le prix.' + frNote;
       var msg = lk.base;
       if (partial) msg = 'Seul le nom a pu être récupéré. Complétez l’extension et le numéro à la main, puis indiquez le prix.';
+      else if (keepShared) msg += ' La photo partagée est conservée.';
       else if (!full.image) msg += ' Aucune image n’est proposée pour cette carte : ajoutez votre photo.';
       else if (remote) msg += ' La photo n’a pas pu être copiée dans le téléphone : elle s’affiche depuis internet, donc pas hors connexion.';
       lkStatus(msg);
@@ -1195,6 +1215,102 @@ textarea.input { resize: vertical; min-height: 92px; }
       $('f-prix').focus();
     } finally {
       lk.picking = false;
+    }
+  }
+
+  /* ---------- Réception d'une photo partagée depuis Android ---------- */
+  var sharedObjectUrl = null;
+  async function readShared() {
+    try {
+      if (!('caches' in window)) return null;
+      var cache = await caches.open('carnet-partage');
+      var pr = await cache.match('partage-photo');
+      var ir = await cache.match('partage-infos');
+      var blob = pr ? await pr.blob() : null;
+      var meta = ir ? await ir.json() : {};
+      await cache.delete('partage-photo');
+      await cache.delete('partage-infos');
+      return { blob: blob, meta: meta || {} };
+    } catch (e) { return null; }
+  }
+  function sharedLink(meta) {
+    var m = [meta.url, meta.text, meta.title].join(' ').match(/https:\/\/[^\s]+/);
+    return m ? m[0] : '';
+  }
+  function closeShared() {
+    state.shared = null;
+    $('shared').hidden = true;
+    $('shared-img').removeAttribute('src');
+    if (sharedObjectUrl) { URL.revokeObjectURL(sharedObjectUrl); sharedObjectUrl = null; }
+  }
+  function renderShared() {
+    var s = state.shared;
+    if (!s || !s.blob) { $('shared').hidden = true; return; }
+    if (sharedObjectUrl) URL.revokeObjectURL(sharedObjectUrl);
+    sharedObjectUrl = URL.createObjectURL(s.blob);
+    $('shared-img').src = sharedObjectUrl;
+    var box = $('shared-targets');
+    box.replaceChildren();
+    var cands = state.cards.filter(function (c) { return !c.photoBlob; })
+      .sort(function (a, b) { return (b.createdAt || 0) - (a.createdAt || 0); }).slice(0, 12);
+    $('shared-pick').hidden = !cands.length;
+    cands.forEach(function (c) {
+      box.append(h('button', { type: 'button', class: 'chip-btn', text: c.nom, onclick: function () { attachShared(c.id); } }));
+    });
+    $('shared').hidden = false;
+    window.scrollTo(0, 0);
+  }
+  async function attachShared(id) {
+    var s = state.shared;
+    if (!s || !s.blob || !state.db) return;
+    try {
+      var card = await state.db.get(id);
+      if (!card) throw new Error('missing');
+      card.photoBlob = s.blob;
+      card.photoUrl = null;
+      card.updatedAt = Date.now();
+      await state.db.put(card);
+      await refresh();
+      closeShared();
+      go('rechercher');
+      openSheet(id);
+      toast('Photo ajoutée à « ' + card.nom + ' ».');
+    } catch (e) {
+      toast(e && e.name === 'QuotaExceededError' ? 'Le téléphone n’a plus assez d’espace pour cette photo.' : 'Impossible d’enregistrer la photo. Réessayez.');
+    }
+  }
+  function newFromShared() {
+    var s = state.shared;
+    if (!s) return;
+    resetForm();
+    if (s.blob) { setPhoto(s.blob); state.photoSource = 'partage'; }
+    if (s.link) $('f-lieu').value = s.link;
+    closeShared();
+    toast('Photo reçue. Complétez la fiche.');
+    setTimeout(function () { $('f-nom').focus(); }, 50);
+  }
+  async function handleShared() {
+    if (!/[?&]partage=1/.test(location.search)) return;
+    history.replaceState(null, '', location.pathname + '#ajouter');
+    var got = await readShared();
+    if (!got) return;
+    var link = sharedLink(got.meta);
+    var photo = null;
+    if (got.blob && got.blob.size) {
+      try { photo = await resizeToBlob(got.blob, 1000, 0.82); }
+      catch (e) { toast('Cette image ne peut pas être lue. Essayez une autre image.'); }
+    }
+    if (!photo && !link) return;
+    showView('ajouter');
+    state.shared = { blob: photo, link: link };
+    if (photo) {
+      renderShared();
+    } else {
+      resetForm();
+      $('f-lieu').value = link;
+      toast('Lien placé dans « Où l’acheter ». Complétez la fiche.');
+      setTimeout(function () { $('f-nom').focus(); }, 50);
+      state.shared = null;
     }
   }
 
@@ -1245,6 +1361,8 @@ textarea.input { resize: vertical; min-height: 92px; }
     if (f) restoreFrom(f);
   });
   $('lookup-form').addEventListener('submit', runLookup);
+  $('shared-new').addEventListener('click', newFromShared);
+  $('shared-drop').addEventListener('click', closeShared);
   $('photo-prev').addEventListener('error', function () {
     if (!state.remoteUrl) return;
     state.remoteUrl = null;
@@ -1258,7 +1376,7 @@ textarea.input { resize: vertical; min-height: 92px; }
   $('photo-change').addEventListener('click', function () { $('f-photo').click(); });
   $('photo-remove').addEventListener('click', function () {
     if (state.photoPreview) URL.revokeObjectURL(state.photoPreview);
-    state.photoBlob = null; state.photoPreview = null; state.removePhoto = true; state.remoteUrl = null;
+    state.photoBlob = null; state.photoPreview = null; state.removePhoto = true; state.remoteUrl = null; state.photoSource = null;
     showErr('photo-err', '');
     updatePhotoUI();
   });
@@ -1282,6 +1400,7 @@ textarea.input { resize: vertical; min-height: 92px; }
     state.cards = cards;
     state.loaded = true;
     render();
+    handleShared().catch(function () { /* facultatif */ });
     try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) { /* facultatif */ }
   }).catch(function () {
     state.db = null;
