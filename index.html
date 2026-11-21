@@ -330,7 +330,7 @@ textarea.input { resize: vertical; min-height: 92px; }
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l1.5-2h7L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1Z"/><circle cx="12" cy="13" r="3.5"/></svg>
             <span>Ajouter une photo</span>
           </span>
-          <img id="photo-prev" alt="Aperçu de la photo" hidden>
+          <img id="photo-prev" alt="Aperçu de la photo" referrerpolicy="no-referrer" hidden>
         </button>
         <div class="photo-actions" id="photo-actions" hidden>
           <button type="button" class="link-btn" id="photo-change">Changer</button>
@@ -563,7 +563,7 @@ textarea.input { resize: vertical; min-height: 92px; }
     var initial = (c.nom || '?').trim().charAt(0).toUpperCase() || '?';
     function placeholder() { return h('div', { class: 'ph-empty', 'aria-hidden': 'true', text: initial }); }
     if (src) {
-      var img = h('img', { src: src, alt: 'Photo de ' + c.nom, loading: 'lazy' });
+      var img = h('img', { src: src, alt: 'Photo de ' + c.nom, loading: 'lazy', referrerpolicy: 'no-referrer' });
       img.addEventListener('error', function () { img.replaceWith(placeholder()); });
       box.append(img);
     } else {
@@ -701,7 +701,7 @@ textarea.input { resize: vertical; min-height: 92px; }
     var src = photoSrc(c);
     var inner = h('div', { class: 'holo-in' });
     if (src) {
-      var img = h('img', { src: src, alt: 'Photo de ' + c.nom });
+      var img = h('img', { src: src, alt: 'Photo de ' + c.nom, referrerpolicy: 'no-referrer' });
       img.addEventListener('error', function () { img.remove(); });
       inner.append(img);
     } else {
@@ -1006,7 +1006,7 @@ textarea.input { resize: vertical; min-height: 92px; }
           notes: cleanStr(r.notes),
           statut: r.statut === 'acquise' ? 'acquise' : 'a-acheter',
           photoBlob: blob,
-          photoUrl: !blob && typeof r.photoUrl === 'string' && /^https:\/\/assets\.tcgdex\.net\//.test(r.photoUrl) ? r.photoUrl : null,
+          photoUrl: !blob && typeof r.photoUrl === 'string' && /^https:\/\/(assets\.tcgdex\.net|product-images\.s3\.cardmarket\.com)\//.test(r.photoUrl) ? r.photoUrl : null,
           createdAt: Number(r.createdAt) || Date.now(),
           updatedAt: Date.now()
         });
@@ -1237,6 +1237,9 @@ textarea.input { resize: vertical; min-height: 92px; }
     var m = [meta.url, meta.text, meta.title].join(' ').match(/https:\/\/[^\s]+/);
     return m ? m[0] : '';
   }
+  function isImageLink(u) {
+    return /^https:\/\/[^\s]+\.(jpe?g|png|webp|gif)(\?[^\s]*)?$/i.test(u) || /^https:\/\/product-images\.s3\.cardmarket\.com\//.test(u);
+  }
   function closeShared() {
     state.shared = null;
     $('shared').hidden = true;
@@ -1300,8 +1303,26 @@ textarea.input { resize: vertical; min-height: 92px; }
       try { photo = await resizeToBlob(got.blob, 1000, 0.82); }
       catch (e) { toast('Cette image ne peut pas être lue. Essayez une autre image.'); }
     }
-    if (!photo && !link) return;
+    /* Android envoie parfois seulement l'adresse de l'image : on va la chercher */
+    var remote = '';
+    if (!photo && link && isImageLink(link)) {
+      try {
+        var res = await fetch(link, { referrerPolicy: 'no-referrer' });
+        if (!res.ok) throw new Error('img');
+        photo = await resizeToBlob(await res.blob(), 1000, 0.82);
+      } catch (e) { remote = link; }
+      link = '';
+    }
+    if (!photo && !link && !remote) return;
     showView('ajouter');
+    if (remote) {
+      resetForm();
+      state.remoteUrl = remote;
+      updatePhotoUI();
+      toast('Photo reçue. Elle s’affiche depuis internet : pour la garder dans le téléphone, enregistrez l’image puis partagez-la depuis la galerie.');
+      setTimeout(function () { $('f-nom').focus(); }, 50);
+      return;
+    }
     state.shared = { blob: photo, link: link };
     if (photo) {
       renderShared();
@@ -1367,7 +1388,8 @@ textarea.input { resize: vertical; min-height: 92px; }
     if (!state.remoteUrl) return;
     state.remoteUrl = null;
     updatePhotoUI();
-    lkStatus((lk.base || '') + ' La photo ne s’affiche pas non plus depuis internet : ajoutez-la vous-même avec le bouton Photo.');
+    lkStatus(((lk.base || '') + ' La photo ne s’affiche pas depuis internet : ajoutez-la vous-même avec le bouton Photo.').trim());
+    toast('La photo ne s’affiche pas depuis internet. Ajoutez-la avec le bouton Photo.');
   });
   $('sheet-close').addEventListener('click', closeSheet);
   $('sheet').addEventListener('click', function (e) { if (e.target === $('sheet')) closeSheet(); });
