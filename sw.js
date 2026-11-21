@@ -1,6 +1,6 @@
 /* Fait fonctionner le carnet sans connexion et reçoit les images partagées depuis Android.
    Changez le numéro de version pour forcer une mise à jour. */
-var CACHE = 'carnet-v5';
+var CACHE = 'carnet-v6';
 var SHARE_CACHE = 'carnet-partage';
 var FILES = ['./', 'index.html', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png'];
 
