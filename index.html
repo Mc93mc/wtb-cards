@@ -145,6 +145,16 @@ textarea.input { resize: vertical; min-height: 92px; }
 .t-price { margin-top: 2px; font-size: 17px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .price-na { font-size: 13px; font-weight: 500; color: var(--muted); }
 
+/* Catégories */
+.cat-filter { margin-top: 16px; }
+.cat-filter .seg { margin-top: 8px; }
+.cat-ctrl { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; }
+.cat-seg { margin-top: 0; }
+.cat-add { display: flex; gap: 8px; }
+.cat-add .input { flex: 1; min-width: 0; }
+.tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.tag { padding: 1px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; line-height: 1.5; background: var(--accent-soft); color: var(--accent); }
+
 /* États vides */
 .empty { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; padding: 24px 20px; border: 1px dashed var(--line); border-radius: var(--r-card); background: var(--surface); }
 .empty h2 { font-family: var(--font-display); font-size: 20px; }
@@ -263,6 +273,17 @@ textarea.input { resize: vertical; min-height: 92px; }
       <button type="button" class="chip-btn" data-filter="a-acheter" aria-pressed="false">À acheter</button>
       <button type="button" class="chip-btn" data-filter="acquise" aria-pressed="false">Acquises</button>
     </div>
+    <div id="cat-filter" class="cat-filter" hidden>
+      <p class="lbl" id="cat-filter-lbl">Catégories</p>
+      <div class="seg" id="cat-chips" role="group" aria-labelledby="cat-filter-lbl"></div>
+      <div class="cat-ctrl">
+        <div class="seg" id="cat-mode" role="group" aria-label="Mode du filtre par catégories" hidden>
+          <button type="button" class="chip-btn" data-mode="or" aria-pressed="true">L’une d’elles</button>
+          <button type="button" class="chip-btn" data-mode="and" aria-pressed="false">Toutes</button>
+        </div>
+        <button type="button" class="link-btn" id="cat-clear" hidden>Effacer le filtre</button>
+      </div>
+    </div>
     <p class="count" id="count" aria-live="polite"></p>
     <div id="results" class="grid"></div>
     <div id="empty" class="empty" hidden></div>
@@ -365,6 +386,16 @@ textarea.input { resize: vertical; min-height: 92px; }
           <label for="f-lieu">Où l’acheter</label>
           <input id="f-lieu" class="input" type="text" autocomplete="off" placeholder="Site, boutique ou lien">
         </div>
+        <div class="field" role="group" aria-labelledby="cat-form-lbl">
+          <span class="lbl" id="cat-form-lbl">Catégories</span>
+          <div class="seg cat-seg" id="f-cats"></div>
+          <div class="cat-add">
+            <label class="sr" for="f-cat-new">Nouvelle catégorie</label>
+            <input id="f-cat-new" class="input" type="text" maxlength="24" autocomplete="off" placeholder="Autre catégorie">
+            <button type="button" class="btn btn-ghost" id="f-cat-add">Ajouter</button>
+          </div>
+          <p class="hint">Touchez une ou plusieurs catégories. Une catégorie ajoutée reste proposée pour les autres cartes.</p>
+        </div>
         <div class="field">
           <label for="f-notes">Notes</label>
           <textarea id="f-notes" class="input" rows="3" placeholder="État souhaité, langue, édition…"></textarea>
@@ -413,7 +444,8 @@ textarea.input { resize: vertical; min-height: 92px; }
     cards: [], loaded: false, slow: false, loadError: false, dbOff: false,
     db: null,
     filter: 'all', openId: null, openerId: null, confirmDelete: false, busy: false, sheetSig: '',
-    editingId: null, saving: false, photoBlob: null, photoPreview: null, removePhoto: false, remoteUrl: null, photoSource: null, shared: null
+    editingId: null, saving: false, photoBlob: null, photoPreview: null, removePhoto: false, remoteUrl: null, photoSource: null, shared: null,
+    formCats: new Set(), cats: new Set(), catMode: 'or'
   };
 
   /* ---------- Stockage dans le téléphone (IndexedDB) ---------- */
@@ -573,14 +605,114 @@ textarea.input { resize: vertical; min-height: 92px; }
     return box;
   }
 
+  /* ---------- Catégories ---------- */
+  var PRESET_CATS = ['Reprint', 'AR', 'FA', 'FUR', 'V', 'VMAX', 'Gold', 'Alt'];
+  var CAT_KEY = 'carnet-categories';
+  function loadCustomCats() {
+    try {
+      var a = JSON.parse(localStorage.getItem(CAT_KEY) || '[]');
+      return Array.isArray(a) ? a.filter(function (s) { return typeof s === 'string' && s.trim(); }) : [];
+    } catch (e) { return []; }
+  }
+  function saveCustomCats(list) { try { localStorage.setItem(CAT_KEY, JSON.stringify(list)); } catch (e) { /* facultatif */ } }
+  function sameCat(a, b) { return norm(a) === norm(b); }
+  function allCategories() {
+    var out = PRESET_CATS.slice();
+    function add(s) { if (s && !out.some(function (x) { return sameCat(x, s); })) out.push(s); }
+    var extra = loadCustomCats();
+    state.cards.forEach(function (c) { (c.categories || []).forEach(function (s) { if (typeof s === 'string') extra.push(s); }); });
+    extra.sort(function (a, b) { return norm(a).localeCompare(norm(b)); }).forEach(add);
+    state.formCats.forEach(add);
+    return out;
+  }
+  function canonCat(s) { return allCategories().filter(function (x) { return sameCat(x, s); })[0] || s; }
+  function tagsEl(list, max) {
+    var box = h('span', { class: 'tags' });
+    list.slice(0, max).forEach(function (s) { box.append(h('span', { class: 'tag', text: s })); });
+    if (list.length > max) box.append(h('span', { class: 'tag', text: '+' + (list.length - max) }));
+    return box;
+  }
+  function renderFormCats() {
+    var box = $('f-cats');
+    box.replaceChildren();
+    allCategories().forEach(function (name) {
+      var btn = h('button', { type: 'button', class: 'chip-btn', 'data-cat': name, 'aria-pressed': state.formCats.has(name) ? 'true' : 'false', text: name });
+      btn.addEventListener('click', function () {
+        if (state.formCats.has(name)) state.formCats.delete(name); else state.formCats.add(name);
+        btn.setAttribute('aria-pressed', state.formCats.has(name) ? 'true' : 'false');
+      });
+      box.append(btn);
+    });
+  }
+  function addCustomCat() {
+    var inp = $('f-cat-new');
+    var name = inp.value.trim().replace(/\s+/g, ' ').slice(0, 24);
+    if (!name) { inp.focus(); return; }
+    var existing = allCategories().filter(function (x) { return sameCat(x, name); })[0];
+    if (!existing) {
+      var custom = loadCustomCats();
+      custom.push(name);
+      saveCustomCats(custom);
+    }
+    state.formCats.add(existing || name);
+    inp.value = '';
+    renderFormCats();
+    inp.focus();
+  }
+  function usedCategories() {
+    var counts = {};
+    state.cards.forEach(function (c) { (c.categories || []).forEach(function (s) { var k = norm(s); counts[k] = (counts[k] || 0) + 1; }); });
+    return allCategories().filter(function (name) { return counts[norm(name)]; }).map(function (name) { return { name: name, n: counts[norm(name)] }; });
+  }
+  function updateCatControls() {
+    $('cat-mode').hidden = state.cats.size < 2;
+    $('cat-clear').hidden = !state.cats.size;
+    document.querySelectorAll('#cat-mode .chip-btn').forEach(function (b) {
+      b.setAttribute('aria-pressed', b.getAttribute('data-mode') === state.catMode ? 'true' : 'false');
+    });
+  }
+  function renderCatFilter() {
+    var used = state.loaded ? usedCategories() : [];
+    var keep = new Set();
+    used.forEach(function (u) { if (state.cats.has(u.name)) keep.add(u.name); });
+    state.cats = keep;
+    $('cat-filter').hidden = !used.length;
+    var chips = $('cat-chips');
+    chips.replaceChildren();
+    used.forEach(function (u) {
+      var btn = h('button', { type: 'button', class: 'chip-btn', 'data-cat': u.name, 'aria-pressed': state.cats.has(u.name) ? 'true' : 'false', text: u.name + ' (' + u.n + ')' });
+      btn.addEventListener('click', function () {
+        if (state.cats.has(u.name)) state.cats.delete(u.name); else state.cats.add(u.name);
+        btn.setAttribute('aria-pressed', state.cats.has(u.name) ? 'true' : 'false');
+        updateCatControls();
+        renderResults();
+      });
+      chips.append(btn);
+    });
+    updateCatControls();
+  }
+  function clearCatFilter() {
+    state.cats = new Set();
+    document.querySelectorAll('#cat-chips .chip-btn').forEach(function (b) { b.setAttribute('aria-pressed', 'false'); });
+    updateCatControls();
+  }
+
   /* ---------- Recherche et liste ---------- */
   function visibleCards() {
     var terms = norm($('q').value).trim().split(/\s+/).filter(Boolean);
     var list = state.cards.filter(function (c) { return state.filter === 'all' || c.statut === state.filter; });
+    if (state.cats.size) {
+      var sel = Array.from(state.cats).map(norm);
+      list = list.filter(function (c) {
+        var cs = (c.categories || []).map(norm);
+        function has(s) { return cs.indexOf(s) !== -1; }
+        return state.catMode === 'and' ? sel.every(has) : sel.some(has);
+      });
+    }
     function byRecent(a, b) { return (b.createdAt || 0) - (a.createdAt || 0); }
     if (!terms.length) return list.sort(byRecent);
     list = list.filter(function (c) {
-      var hay = norm([c.nom, c.serie, c.numero, c.lieu, c.notes].join(' '));
+      var hay = norm([c.nom, c.serie, c.numero, c.lieu, c.notes, (c.categories || []).join(' ')].join(' '));
       return terms.every(function (t) { return hay.indexOf(t) !== -1; });
     });
     function score(c) {
@@ -600,7 +732,8 @@ textarea.input { resize: vertical; min-height: 92px; }
       ? h('span', { class: 't-price', text: eur.format(c.prix) })
       : h('span', { class: 't-price price-na', text: 'Prix à saisir' });
     return h('button', { type: 'button', class: 'tile', 'data-id': c.id, onclick: function () { openSheet(c.id); } },
-      photoBox(c, badge), h('span', { class: 't-name', text: c.nom }), sub, price);
+      photoBox(c, badge), h('span', { class: 't-name', text: c.nom }), sub,
+      c.categories && c.categories.length ? tagsEl(c.categories, 3) : null, price);
   }
   function renderSummary() {
     var s = $('summary');
@@ -648,10 +781,11 @@ textarea.input { resize: vertical; min-height: 92px; }
     var q = $('q').value.trim();
     if (!list.length) {
       if (q) showEmpty('Aucun résultat', 'Aucune carte ne correspond à « ' + q + ' ».', 'Ajouter « ' + q + ' »', function () { startNew(q); });
-      else showEmpty('Rien dans cette liste', 'Aucune carte n’a ce statut pour le moment.');
+      else showEmpty('Rien dans cette liste', state.cats.size ? 'Aucune carte ne correspond à ces filtres. Changez ou effacez les catégories choisies.' : 'Aucune carte n’a ce statut pour le moment.');
       return;
     }
-    $('count').textContent = list.length + ' ' + plural(list.length, 'carte', 'cartes');
+    var catTxt = state.cats.size ? ' · ' + Array.from(state.cats).join(state.catMode === 'and' ? ' + ' : ' ou ') : '';
+    $('count').textContent = list.length + ' ' + plural(list.length, 'carte', 'cartes') + catTxt;
     list.forEach(function (c) { res.append(tile(c)); });
   }
   function renderExport() {
@@ -661,8 +795,10 @@ textarea.input { resize: vertical; min-height: 92px; }
   }
   function render() {
     renderSummary();
+    renderCatFilter();
     renderResults();
     renderExport();
+    renderFormCats();
     renderSheet(false);
   }
 
@@ -749,6 +885,7 @@ textarea.input { resize: vertical; min-height: 92px; }
       h('div', { class: 'holo' }, inner),
       h('div', { class: 'f-title' }, h('h2', { id: 'sheet-title', text: c.nom }), meta),
       h('span', { class: 'status' + (acquise ? ' ok' : ''), text: acquise ? 'Acquise' : 'À acheter' }),
+      c.categories && c.categories.length ? tagsEl(c.categories, 12) : null,
       priceBox,
       details.children.length ? details : null,
       actions);
@@ -815,6 +952,8 @@ textarea.input { resize: vertical; min-height: 92px; }
   function resetForm() {
     $('form').reset();
     clearPhotoState();
+    state.formCats = new Set();
+    renderFormCats();
     state.editingId = null;
     ['nom-err', 'prix-err', 'form-err', 'photo-err'].forEach(function (id) { showErr(id, ''); });
     ['f-nom', 'f-prix'].forEach(function (id) { $(id).removeAttribute('aria-invalid'); });
@@ -843,6 +982,8 @@ textarea.input { resize: vertical; min-height: 92px; }
     $('f-prix').value = c.prix != null ? String(c.prix).replace('.', ',') : '';
     $('f-lieu').value = c.lieu || '';
     $('f-notes').value = c.notes || '';
+    state.formCats = new Set((c.categories || []).map(canonCat));
+    renderFormCats();
     $('lookup').hidden = true;
     $('add-eyebrow').textContent = 'Modification';
     $('h-add').textContent = 'Modifier la carte';
@@ -889,6 +1030,7 @@ textarea.input { resize: vertical; min-height: 92px; }
         prix: price.val,
         lieu: $('f-lieu').value.trim(),
         notes: $('f-notes').value.trim(),
+        categories: allCategories().filter(function (n) { return state.formCats.has(n); }),
         statut: ex && ex.statut ? ex.statut : 'a-acheter',
         photoBlob: photoBlob,
         photoUrl: photoUrl,
@@ -899,7 +1041,7 @@ textarea.input { resize: vertical; min-height: 92px; }
       await refresh();
       var wasEdit = !!state.editingId;
       resetForm();
-      $('q').value = ''; setFilter('all');
+      $('q').value = ''; setFilter('all'); clearCatFilter();
       go('rechercher');
       toast(wasEdit ? 'Modifications enregistrées.' : 'Carte ajoutée au carnet.');
     } catch (e) {
@@ -919,9 +1061,9 @@ textarea.input { resize: vertical; min-height: 92px; }
     return /[";\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
   }
   async function exportCsv() {
-    var rows = [['Nom', 'Extension', 'Numéro', 'Prix conseillé (€)', 'Où l’acheter', 'Statut', 'Notes']];
+    var rows = [['Nom', 'Extension', 'Numéro', 'Prix conseillé (€)', 'Où l’acheter', 'Statut', 'Catégories', 'Notes']];
     state.cards.slice().sort(function (a, b) { return norm(a.nom).localeCompare(norm(b.nom)); }).forEach(function (c) {
-      rows.push([c.nom, c.serie, c.numero, c.prix != null ? String(c.prix).replace('.', ',') : '', c.lieu, c.statut === 'acquise' ? 'Acquise' : 'À acheter', c.notes]);
+      rows.push([c.nom, c.serie, c.numero, c.prix != null ? String(c.prix).replace('.', ',') : '', c.lieu, c.statut === 'acquise' ? 'Acquise' : 'À acheter', (c.categories || []).join(' | '), c.notes]);
     });
     var data = '﻿' + rows.map(function (r) { return r.map(csvCell).join(';'); }).join('\r\n');
     try {
@@ -982,6 +1124,14 @@ textarea.input { resize: vertical; min-height: 92px; }
     }
   }
   function cleanStr(v) { return typeof v === 'string' ? v.trim() : ''; }
+  function cleanCats(v) {
+    var out = [];
+    (Array.isArray(v) ? v : []).forEach(function (s) {
+      var t = cleanStr(s).replace(/\s+/g, ' ').slice(0, 24);
+      if (t && out.length < 12 && !out.some(function (x) { return sameCat(x, t); })) out.push(t);
+    });
+    return out;
+  }
   async function restoreFrom(file) {
     showErr('restore-err', '');
     if (!state.db) { showErr('restore-err', 'Le navigateur bloque l’enregistrement sur ce téléphone. Quittez la navigation privée ou autorisez le stockage du site.'); return; }
@@ -1004,6 +1154,7 @@ textarea.input { resize: vertical; min-height: 92px; }
           prix: typeof r.prix === 'number' && isFinite(r.prix) && r.prix >= 0 ? r.prix : null,
           lieu: cleanStr(r.lieu),
           notes: cleanStr(r.notes),
+          categories: cleanCats(r.categories),
           statut: r.statut === 'acquise' ? 'acquise' : 'a-acheter',
           photoBlob: blob,
           photoUrl: !blob && typeof r.photoUrl === 'string' && /^https:\/\/(assets\.tcgdex\.net|product-images\.s3\.cardmarket\.com)\//.test(r.photoUrl) ? r.photoUrl : null,
@@ -1352,7 +1503,7 @@ textarea.input { resize: vertical; min-height: 92px; }
   }
   function setFilter(f) {
     state.filter = f;
-    document.querySelectorAll('.chip-btn').forEach(function (b) {
+    document.querySelectorAll('.chip-btn[data-filter]').forEach(function (b) {
       b.setAttribute('aria-pressed', b.getAttribute('data-filter') === f ? 'true' : 'false');
     });
   }
@@ -1367,9 +1518,15 @@ textarea.input { resize: vertical; min-height: 92px; }
       go(v);
     });
   });
-  document.querySelectorAll('.chip-btn').forEach(function (b) {
+  document.querySelectorAll('.chip-btn[data-filter]').forEach(function (b) {
     b.addEventListener('click', function () { setFilter(b.getAttribute('data-filter')); renderResults(); });
   });
+  document.querySelectorAll('#cat-mode .chip-btn').forEach(function (b) {
+    b.addEventListener('click', function () { state.catMode = b.getAttribute('data-mode'); updateCatControls(); renderResults(); });
+  });
+  $('cat-clear').addEventListener('click', function () { clearCatFilter(); renderResults(); });
+  $('f-cat-add').addEventListener('click', addCustomCat);
+  $('f-cat-new').addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); addCustomCat(); } });
   $('q').addEventListener('input', renderResults);
   $('form').addEventListener('submit', saveCard);
   $('cancel').addEventListener('click', function () { resetForm(); go('rechercher'); });
