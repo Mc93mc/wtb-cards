@@ -169,6 +169,8 @@ textarea.input { resize: vertical; min-height: 92px; }
   border: 1px solid transparent; border-radius: var(--r-ctl); font-weight: 600; cursor: pointer;
 }
 .btn:disabled { opacity: 0.6; cursor: default; }
+a.btn, a.link-btn { text-decoration: none; color: inherit; }
+a.link-btn { display: inline-flex; align-items: center; color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
 .btn-primary { background: var(--accent); color: var(--on-accent); }
 .btn-ghost { background: var(--surface); border-color: var(--line); }
 .btn-danger { background: var(--surface); border-color: var(--danger); color: var(--danger); }
@@ -357,6 +359,7 @@ textarea.input { resize: vertical; min-height: 92px; }
           <button type="button" class="link-btn" id="photo-change">Changer</button>
           <button type="button" class="link-btn" id="photo-remove">Retirer</button>
         </div>
+        <a id="photo-web" class="link-btn" href="https://www.google.com/search?tbm=isch&amp;q=carte+Pok%C3%A9mon" target="_blank" rel="noopener noreferrer">Chercher la photo sur internet</a>
         <p class="err" id="photo-err" role="alert" hidden></p>
       </div>
 
@@ -825,6 +828,11 @@ textarea.input { resize: vertical; min-height: 92px; }
       if (t) t.focus();
     }
   }
+  /* Recherche d'images sur internet pour retrouver la photo d'une carte. */
+  function webSearchUrl(nom, serie, numero) {
+    var q = [nom, serie, numero, 'carte Pokémon'].map(function (s) { return String(s || '').trim(); }).filter(Boolean).join(' ');
+    return 'https://www.google.com/search?tbm=isch&q=' + encodeURIComponent(q);
+  }
   function renderSheet(force) {
     if (!state.openId) return;
     var c = state.cards.find(function (x) { return x.id === state.openId; });
@@ -871,6 +879,7 @@ textarea.input { resize: vertical; min-height: 92px; }
       text: acquise ? 'Remettre à acheter' : 'Marquer comme acquise', onclick: function () { toggleStatus(c); }
     }));
     actions.append(h('button', { type: 'button', id: 'sheet-edit', class: 'btn btn-ghost', text: 'Modifier', onclick: function () { startEdit(c); } }));
+    actions.append(h('a', { id: 'sheet-web', class: 'btn btn-ghost', href: webSearchUrl(c.nom, c.serie, c.numero), target: '_blank', rel: 'noopener noreferrer', text: 'Chercher sur internet' }));
     if (state.confirmDelete) {
       actions.append(h('div', { class: 'confirm' },
         h('p', { text: 'Supprimer « ' + c.nom + ' » du carnet ? Cette action est définitive.' }),
@@ -881,14 +890,14 @@ textarea.input { resize: vertical; min-height: 92px; }
       actions.append(h('button', { type: 'button', id: 'sheet-del', class: 'btn btn-danger', text: 'Supprimer', onclick: function () { state.confirmDelete = true; renderSheet(true); } }));
     }
 
-    $('sheet-body').replaceChildren(
+    $('sheet-body').replaceChildren.apply($('sheet-body'), [
       h('div', { class: 'holo' }, inner),
       h('div', { class: 'f-title' }, h('h2', { id: 'sheet-title', text: c.nom }), meta),
       h('span', { class: 'status' + (acquise ? ' ok' : ''), text: acquise ? 'Acquise' : 'À acheter' }),
       c.categories && c.categories.length ? tagsEl(c.categories, 12) : null,
       priceBox,
       details.children.length ? details : null,
-      actions);
+      actions].filter(Boolean));
     if (focusedId) {
       var again = document.getElementById(focusedId);
       if (again) again.focus();
@@ -1551,6 +1560,10 @@ textarea.input { resize: vertical; min-height: 92px; }
   $('sheet-close').addEventListener('click', closeSheet);
   $('sheet').addEventListener('click', function (e) { if (e.target === $('sheet')) closeSheet(); });
   document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && state.openId) closeSheet(); });
+  $('photo-web').addEventListener('click', function (e) {
+    if (!$('f-nom').value.trim()) { e.preventDefault(); $('f-nom').focus(); return; }
+    this.href = webSearchUrl($('f-nom').value, $('f-serie').value, $('f-num').value);
+  });
   $('photo-btn').addEventListener('click', function () { $('f-photo').click(); });
   $('photo-change').addEventListener('click', function () { $('f-photo').click(); });
   $('photo-remove').addEventListener('click', function () {
